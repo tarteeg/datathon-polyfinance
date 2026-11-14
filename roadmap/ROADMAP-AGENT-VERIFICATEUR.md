@@ -180,9 +180,10 @@ Réalisée le 14 novembre 2026.
 - ⬜ Moyen de montrer une erreur détectée en direct, sans fausser le produit : un test automatisé qui altère une réponse, ou un mode de démonstration activé par variable d'environnement et jamais actif par défaut. À trancher avec l'équipe.
 - ⬜ Décision D1 : passage à un contrôle avant affichage seulement si la reprise fonctionne et que la durée reste acceptable.
 
-### Phase F : déploiement ⬜
-- ⬜ Récupérer `main` avant la pull request (Ben y fusionne régulièrement).
-- ⬜ Pull request de `agent-verificateur` vers `main`. Le merge déclenche le déploiement automatique (10 à 15 minutes, canary).
+### Phase F : déploiement (en cours, pull request ouverte, non fusionnée)
+- ✅ `main` récupéré et fusionné dans la branche le 14 novembre 2026 (agent « trickle-down » de Ben, 72 fichiers). Un seul conflit, dans `backend-server/.env.example` (les deux blocs sont gardés). Après la fusion : 44 tests passent, l'application s'importe et expose `/chat`, `/chat/stream` et les routes `/riskripple/*`. Il a fallu installer `requirements.txt` dans le venv local (`psycopg2-binary`, `rapidfuzz`).
+- ✅ Branche poussée et pull request ouverte vers `main`. **Elle n'est pas fusionnée** : le merge déclenche le déploiement automatique (10 à 15 minutes, canary).
+- ⬜ Avant de fusionner : relire la pull request, vérifier l'affichage du verdict dans le navigateur, puis fusionner.
 - ⬜ Aucun droit IAM nouveau (même modèle). Variable facultative `VERIFIER_JUDGE=off` pour désactiver l'étage 2. Le chat gagne un appel Bedrock de 1 à 3 secondes par réponse : à surveiller sur l'URL publique.
 - ⬜ Tester une question de transfert sur l'URL publique, après la fin du déploiement.
 
