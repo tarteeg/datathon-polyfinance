@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001002910-26-000009)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1002910/000100291026000009/aee-20251231.htm",
+  "retrieved_at": "2026-11-14T21:59:42.016781Z",
+  "observation_date": null,
+  "publication_date": "2026-02-18",
+  "currency": null,
+  "data_version": "3133d42d29670c36",
+  "content_hash": "3133d42d29670c36458b20720fb3a0fa36a2a0646a34101c1e6d76919ed82e98",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Electric & Other Services Combined",
+  "company_name": "AMEREN CORP",
+  "fetched_live": true
+}
