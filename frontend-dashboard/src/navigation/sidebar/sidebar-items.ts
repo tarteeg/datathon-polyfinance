@@ -22,6 +22,7 @@ import {
   ShoppingBag,
   UserRound,
   Users,
+  Waves,
 } from "lucide-react";
 
 export interface NavSubItem {
@@ -89,6 +90,12 @@ export const sidebarItems: NavGroup[] = [
         title: "Finance",
         url: "/dashboard/finance",
         icon: Banknote,
+      },
+      {
+        id: "risk-ripple",
+        title: "Risk Ripple",
+        url: "/dashboard/risk-ripple",
+        icon: Waves,
       },
       {
         id: "analytics",
