@@ -213,7 +213,8 @@ class SourceNumber:
         text = ""
         for part in self.path:
             text += part if part.startswith("[") or not text else "." + part
-        return f"{self.name} · {text}" if text else self.name
+        label = self.name.split("#")[0]  # the call id keeps calls apart but means nothing to a reader
+        return f"{label} · {text}" if text else label
 
 
 _AMOUNT_KEYS = {"price", "value", "previousclose", "baseline", "pricechange", "dailychange", "high", "low",

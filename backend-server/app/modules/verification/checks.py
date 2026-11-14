@@ -20,6 +20,8 @@ from app.modules.verification.numbers import (
 
 EPSILON = 1e-9
 MAX_FOUND = 3
+# Language-neutral codes for the dashboard, which is not written in French.
+VERDICT_CODES = {"validé": "verified", "à réserve": "review", "rejeté": "rejected", "non évalué": "unverified"}
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,7 @@ class Report:
     def to_dict(self) -> dict:
         return {
             "verdict": self.verdict,
+            "code": VERDICT_CODES[self.verdict],
             "checked": len(self.results),
             "unmatched": [{"text": r.text, "location": r.location, "status": r.status} for r in self.unmatched],
             "derived": [{"text": r.text, "location": r.location,
@@ -161,7 +164,8 @@ def _question_arithmetic(claim: Claim, sources: list[SourceNumber]) -> list[Foun
 
 
 def _derived_matches(claim: Claim, sources: list[SourceNumber]) -> list[Found]:
-    found = [*_points_gaps(claim, sources), *_before_after_changes(claim, sources), *_question_arithmetic(claim, sources)]
+    # The most specific explanation first: the dashboard names the first operands.
+    found = [*_before_after_changes(claim, sources), *_question_arithmetic(claim, sources), *_points_gaps(claim, sources)]
     return found[:MAX_FOUND]
 
 

@@ -1,8 +1,17 @@
+// Result of the backend's check that every figure in a reply comes from a tool result.
+export type FigureCheck = {
+  code: "verified" | "review" | "rejected" | "unverified";
+  checked: number;
+  unmatched: { text: string; location: string; status: string }[];
+  derived: { text: string; location: string; operands: string[][] }[];
+};
+
 export type ChatActivity = {
   id: string;
   tool: string;
   input: Record<string, unknown>;
   status: "running" | "completed" | "partial" | "failed";
+  output?: FigureCheck;
 };
 
 // HTTP chunks may split a UTF-8 character or contain several newline-delimited records.

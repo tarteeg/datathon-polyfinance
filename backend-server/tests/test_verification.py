@@ -43,7 +43,7 @@ def test_every_figure_from_the_tool_is_valid():
     report = verdict("La technologie passe de 20 % à 26,32 % pour un transfert de 10 %.", question="")
     assert report.verdict == "validé"
     assert [r.status for r in report.results] == ["ok", "ok", "ok"]
-    assert report.results[1].found[0].source.startswith("simulate_transfer#t0 · AlphaForge calculation.sectorExposure.after")
+    assert report.results[1].found[0].source.startswith("simulate_transfer · AlphaForge calculation.sectorExposure.after")
 
 
 def test_a_changed_figure_is_rejected():
@@ -219,7 +219,7 @@ def test_figure_in_table_cells_is_checked():
 def test_report_dictionary_is_serialisable():
     report = verdict("Exposition de 28 %.")
     assert json.loads(json.dumps(report.to_dict())) == {
-        "verdict": "rejeté", "checked": 1, "derived": [],
+        "verdict": "rejeté", "code": "rejected", "checked": 1, "derived": [],
         "unmatched": [{"text": "28 %", "location": "explanation", "status": "unmatched"}]}
 
 

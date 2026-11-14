@@ -1,5 +1,5 @@
-import { Check, ChevronDown, CircleAlert, LoaderCircle, Wrench } from "lucide-react";
-import type { ChatActivity } from "@/lib/chat-stream";
+import { Check, ChevronDown, CircleAlert, LoaderCircle, ShieldCheck, Wrench } from "lucide-react";
+import type { ChatActivity, FigureCheck } from "@/lib/chat-stream";
 
 const labels: Record<string, string> = {
   get_stock: "Look up stock prices",
@@ -13,12 +13,65 @@ const labels: Record<string, string> = {
   risk_history: "Measure historical risk",
   check_data: "Check data coverage",
   convert_currency: "Convert currency",
+  verify_answer: "Check figures",
 };
+
+const verdicts: Record<FigureCheck["code"], string> = {
+  verified: "All figures found in sources",
+  review: "Figures to review",
+  rejected: "Figures without a source",
+  unverified: "Not checked",
+};
+
+const VERIFY = "verify_answer";
+
+// "simulate_transfer · AlphaForge calculation.concentration.before.herfindahl" becomes "concentration.before.herfindahl".
+const shortSource = (source: string) => (source.split(" · ").pop() ?? source).split(".").slice(-3).join(".");
+
+function FigureCheckDetails({ check }: { check: FigureCheck }) {
+  return (
+    <div className="space-y-2 py-1 text-xs">
+      <p>
+        {check.checked} figure{check.checked === 1 ? "" : "s"} checked against tool results, your question and saved
+        data.
+      </p>
+      {check.unmatched.length > 0 && (
+        <div>
+          <p className="font-medium">No source found</p>
+          <ul className="list-inside list-disc">
+            {check.unmatched.map((item) => (
+              <li key={`${item.location}-${item.text}`}>
+                <code>{item.text}</code> in {item.location}
+                {item.status === "weak_unmatched" ? " (small whole number)" : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {check.derived.length > 0 && (
+        <div>
+          <p className="font-medium">Computed from other figures, not returned by a tool</p>
+          <ul className="list-inside list-disc">
+            {check.derived.map((item) => (
+              <li key={`${item.location}-${item.text}`}>
+                <code>{item.text}</code> in {item.location}
+                {item.operands[0] ? `, from ${item.operands[0].map(shortSource).join(" and ")}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[]; streaming: boolean }) {
   if (!steps?.length) return null;
-  const active = streaming && steps.find((item) => item.status === "running");
-  const Icon = active ? LoaderCircle : Wrench;
+  const tools = steps.filter((item) => item.tool !== VERIFY);
+  const check = steps.find((item) => item.tool === VERIFY)?.output;
+  const active = streaming && tools.find((item) => item.status === "running");
+  const Icon = active ? LoaderCircle : check && !tools.length ? ShieldCheck : Wrench;
+  const toolSummary = `Activity · ${tools.length} tool call${tools.length === 1 ? "" : "s"}`;
   return (
     <details className="group/activity rounded-xl border bg-muted/20 text-sm">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
@@ -26,7 +79,7 @@ export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[];
         <span className="flex-1">
           {active
             ? (labels[active.tool] ?? active.tool)
-            : `Activity · ${steps.length} tool call${steps.length === 1 ? "" : "s"}`}
+            : [tools.length ? toolSummary : "Activity", check && verdicts[check.code]].filter(Boolean).join(" · ")}
         </span>
         <ChevronDown aria-hidden className="size-4 group-open/activity:rotate-180" />
       </summary>
@@ -34,16 +87,25 @@ export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[];
         {steps.map((step) => {
           const status = step.status === "running" && !streaming ? "interrupted" : step.status;
           const StatusIcon = status === "completed" ? Check : status === "running" ? LoaderCircle : CircleAlert;
+          const result = step.tool === VERIFY ? step.output : undefined;
           return (
             <li key={step.id} className="list-none">
               <details>
                 <summary className="flex cursor-pointer items-center gap-2">
                   <StatusIcon aria-hidden className="size-4" />
                   <span className="flex-1">{labels[step.tool] ?? step.tool}</span>
-                  <span className="capitalize text-muted-foreground">{status}</span>
+                  <span className={result ? "text-muted-foreground" : "capitalize text-muted-foreground"}>
+                    {result ? verdicts[result.code] : status}
+                  </span>
                 </summary>
-                <code>{step.tool}</code>
-                <pre className="text-xs">{JSON.stringify(step.input, null, 2)}</pre>
+                {result ? (
+                  <FigureCheckDetails check={result} />
+                ) : (
+                  <>
+                    <code>{step.tool}</code>
+                    <pre className="text-xs">{JSON.stringify(step.input, null, 2)}</pre>
+                  </>
+                )}
               </details>
             </li>
           );

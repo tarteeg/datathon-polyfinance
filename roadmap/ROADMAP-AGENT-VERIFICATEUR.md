@@ -140,14 +140,22 @@ Réalisée le 14 novembre 2026.
 
 **Critère de sortie :** atteint. Les tests passent, et la fonction donne un verdict stable sur des réponses réelles de transfert (verdict `à réserve` à cause des variations calculées par le modèle). Elle est pure : mêmes entrées, même verdict.
 
-### Phase C : intégration et affichage ⬜
-- ⬜ Dans `reply_events`, après la boucle d'outils, appeler le contrôle et émettre un pas d'activité `verify_answer` avec son statut (`completed`, `partial`, `failed`) et son verdict.
-- ⬜ Étendre le pas d'activité d'un champ de sortie (nombres contrôlés, nombres non retrouvés), enregistré dans `tool_activity` comme le reste.
-- ⬜ Frontend : libellé et affichage du verdict dans `activity-timeline.tsx`. Lister les nombres non retrouvés.
-- ⬜ `ARCHITECTURE.md` et le README du backend (obligation de `AGENTS.md`). Le diagramme gagne une flèche du chat vers le vérificateur.
-- ⬜ Vérifier que l'ancienne réponse déjà enregistrée s'ouvre toujours, sans pas `verify_answer`.
+### Phase C : intégration et affichage ✅ (backend), ⚠️ (frontend non vérifié)
+Réalisée le 14 novembre 2026.
+- ✅ `verification/step.py` : `verification_activity(...)` construit le pas `verify_answer` (statut `completed` pour `validé`, `partial` pour `à réserve` et `non évalué`, `failed` pour `rejeté`) avec le rapport dans `output`. Une exception dans le contrôle est journalisée et donne `non évalué` : la réponse part quand même.
+- ✅ `routes.py` : 4 lignes dans `reply_events`, après la boucle d'outils et avant les sources. Le contrôle ne s'exécute qu'en flux continu (`/chat/stream`). `POST /chat` ne change pas. Il ne consomme aucun tour de la boucle.
+- ✅ `Report.to_dict()` ajoute un code neutre (`verified`, `review`, `rejected`, `unverified`) pour le dashboard, qui n'est pas en français.
+- ✅ Aucune migration : le serveur Next.js enregistre déjà tous les pas d'activité dans `chat_turns.tool_activity`. `route.ts` n'a pas changé.
+- ✅ Frontend : type `FigureCheck` et champ `output` dans `chat-stream.ts`. `activity-timeline.tsx` affiche le verdict dans le résumé et dans le pas « Check figures », avec les chiffres sans source et les chiffres calculés (opérandes raccourcis). Les appels d'outils sont comptés sans le pas de contrôle. Une réponse enregistrée avant cette phase n'a pas ce pas et s'affiche comme avant (lu dans le code, non essayé).
+- ✅ `ARCHITECTURE.md` (paragraphe et flèche du diagramme) et README du backend (section « Figure check »).
+- ✅ Vérifié en local avec le vrai modèle Bedrock (données de marché synthétiques de `evals/`) :
+  - Question de transfert de 10 % : outils `simulate_transfer` et `sector_exposure`, puis `verify_answer` en statut `partial`, verdict `à réserve`, **38 chiffres contrôlés**, aucun sans source. Les 3 chiffres signalés sont des variations que le modèle a calculées lui-même (`−10,0 pts`, `−0,18` sur l'indice de Herfindahl, `+0,22` sur le nombre effectif de lignes). Le verdict n'est donc pas `validé`, contrairement à ce que prévoyait le critère de sortie.
+  - Question sans outil (« Combien font 15 % de 2 000 $ ? ») : réponse correcte, verdict `à réserve` (calcul sur les chiffres de la question).
+  - Faux Bedrock : un chiffre inventé (`+7,9 %`) donne `rejeté` avec `failed` et le chiffre nommé. Une panne simulée du contrôle donne `non évalué` et la réponse arrive.
+- ⚠️ Non vérifié : l'affichage dans le navigateur, `npm run check` et le typage du frontend (la consigne du dashboard demande de ne les lancer que sur demande), et la relecture d'un fil enregistré.
+- ⚠️ Constaté pendant l'essai : une variation écrite par le modèle peut correspondre à plusieurs paires d'opérandes. Le contrôle nomme d'abord la plus précise (variation entre `before` et `after`), puis les autres.
 
-**Critère de sortie :** une question de transfert en local montre le pas `verify_answer` dans le déroulé, avec « validé » et le nombre de chiffres contrôlés. Une question simple (cours de MSFT) fonctionne toujours.
+**Critère de sortie :** atteint pour le backend : le pas `verify_answer` apparaît dans le déroulé d'une vraie question de transfert avec son verdict et le nombre de chiffres contrôlés, et une question simple répond toujours. L'affichage reste à vérifier dans le navigateur.
 
 ### Phase D : étage Bedrock ⬜
 - ⬜ `verification/judge.py` : un appel `converse` avec la réponse, les sorties d'outils et les règles de la section 5. Sortie structurée, validée par Pydantic. Si la sortie est invalide, le verdict de l'étage 2 est `non évalué` et le contrôle de l'étage 1 reste affiché.

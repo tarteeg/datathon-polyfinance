@@ -18,6 +18,7 @@ from app.modules.chat.portfolio import PORTFOLIO_TOOL, Holding, PortfolioQuery, 
 from app.modules.chat.news import NEWS_TOOL, NewsQuery, search_news, source_list
 from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANALYSIS_TOOLS, run_analysis_tool
 from app.modules.verification.ledger import EvidenceLedger
+from app.modules.verification.step import verification_activity
 
 router = APIRouter()
 
@@ -224,6 +225,10 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         raise HTTPException(502, "Bedrock could not complete the request.") from error
     if not answer.strip():
         raise HTTPException(502, "Bedrock returned an empty reply.")
+    if streaming:
+        saved = {"chart": request.chart, "previous_stock": request.previous_stock, "previous_news": request.previous_news,
+                 "history": [exchange.model_dump() for exchange in request.history]}
+        yield {"activity": verification_activity(answer, ledger, question=request.question, references=saved)}
     footer = (source_list(news) if news and news["stories"] else "") + "".join(stock_source(item) for item in stocks)
     for ranking in rankings:
         footer += f"\n\nStocksFeed · {ranking['sector'] or 'All sectors'} · Last {ranking['hours']} hours · {ranking['asOf']}"

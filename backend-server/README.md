@@ -90,7 +90,11 @@ For news questions, Bedrock can request multiple read-only StocksFeed searches p
 
 The user's own portfolio (`portfolio=mine`) is valued in CAD with the Bank of Canada rate. Sector shares come from Yahoo Finance; `risk_history` uses daily closes adjusted for splits and dividends. The tools need outbound HTTPS access to Yahoo Finance and `www.bankofcanada.ca`, and no new environment variable.
 
-Run the calculation tests from this directory:
+## Figure check
+
+`app/modules/verification/` checks each reply after it streams. `/chat/stream` sends one more activity record, `verify_answer`, whose `output` holds the verdict (`verified`, `review`, `rejected` or `unverified`), the number of figures checked, the figures with no source and the figures computed from other figures. It needs no new environment variable and no model call. `POST /chat` does not run the check. The figures it matches come from the tool results of the same question, the question itself, and the saved `chart`, `previous_stock`, `previous_news` and `history` fields. A failure inside the check never blocks a reply.
+
+Run the calculation and verification tests from this directory:
 
 ```sh
 python -m pip install -r requirements-dev.txt
