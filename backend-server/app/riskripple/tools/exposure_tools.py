@@ -88,7 +88,10 @@ def resolve_company_identity(name_or_symbol: str, known_symbols: list[str]) -> d
 
 @tool
 def load_company_graph(
-    portfolio_symbols: list[str], fixtures_dir: str | None = None, event_description: str | None = None
+    portfolio_symbols: list[str],
+    fixtures_dir: str | None = None,
+    event_description: str | None = None,
+    strict_materials_only: bool = False,
 ) -> dict:
     """Build the verified exposure graph for a set of portfolio holdings, grounded in
     each holding's REAL, current 10-K (live-fetched for any ticker, not just a fixed
@@ -111,6 +114,12 @@ def load_company_graph(
     keyed by symbol, e.g. "Electric Services" vs. "Semiconductors & Related Devices")
     so a holding with no established link can be explained ("this is a utility, not
     plausibly connected to a chip export event") instead of silently omitted.
+
+    `strict_materials_only=True` skips the capitalized-multi-word-phrase candidate
+    path (see `extract_candidate_entities`'s docstring) -- use this for news-derived
+    event descriptions, where an arbitrary company name mentioned in passing is far
+    more likely to be an incidental competitor/market-commentary mention than a
+    genuine material/technology/sanctions-relevant entity.
     """
     edges: list[ExposureEdge] = []
     industries: dict[str, str | None] = {}
@@ -118,7 +127,9 @@ def load_company_graph(
 
     candidate_aliases: dict[str, list[str]] = {}
     if event_description:
-        for candidate in extract_candidate_entities(event_description, max_candidates=15):
+        for candidate in extract_candidate_entities(
+            event_description, max_candidates=15, include_phrases=not strict_materials_only
+        ):
             candidate_aliases[candidate] = [candidate]
         candidate_aliases = _filter_boilerplate_candidates(candidate_aliases, fixtures_dir)
 

@@ -203,12 +203,31 @@ def search_filings_fulltext(query: str, symbols: list[str] | None = None, fixtur
     return {"query": query, "symbols_searched": symbols, "hits": hits, "found": len(hits) > 0}
 
 
-def extract_candidate_entities(text: str, max_candidates: int = 10) -> list[str]:
+def extract_candidate_entities(text: str, max_candidates: int = 10, *, include_phrases: bool = True) -> list[str]:
     """Plain (non-@tool) implementation shared by `propose_candidate_entities` below
     and by `exposure_tools.load_company_graph`, which needs to run this same
     extraction internally (not as an agent-invoked tool call) to build a per-event,
     per-portfolio exposure graph instead of only checking the fixed
-    KNOWN_SUPPLIER_ALIASES seed list."""
+    KNOWN_SUPPLIER_ALIASES seed list.
+
+    `include_phrases=False` skips the capitalized-multi-word-phrase path entirely,
+    keeping only the curated single-word materials/tech/sanctions-geography
+    allowlist. Confirmed necessary for news specifically (not regulatory documents):
+    a real news article mentioning "Nvidia Corp" or "Samsung" in passing (a roundup
+    of unrelated stock moves, or a company's own competitor-landscape disclosure)
+    will literally match that same company's name in ANOTHER held company's 10-K --
+    e.g. AMD's real 10-K says "we compete primarily against ... Nvidia Corporation",
+    a competitor mention, not a supplier relationship, but
+    `extract_supplier_edges_from_filing_text` labels every literal match
+    relationship_type="supplier" regardless of context. A Federal Register document
+    naming a specific act/list/material is reliably substantive; an arbitrary
+    capitalized company name in a news roundup is not. The single-word allowlist
+    (titanium, Russia, sanctions, etc.) doesn't have this problem since those terms
+    don't double as other portfolio holdings' own competitor names.
+    """
+    if not include_phrases:
+        return _single_word_candidates(text, max_candidates)
+
     seen: dict[str, None] = {}
     for raw_match in _CANDIDATE_ENTITY_RE.finditer(text):
         candidate = raw_match.group(0).strip()

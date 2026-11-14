@@ -30,10 +30,11 @@ BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonne
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", os.environ.get("AWS_REGION", "us-east-1"))
 
 RECOMMENDATION_SYSTEM_PROMPT = """You are RiskRipple AI's alert-recommendation writer.
-You are given: a regulatory/sanctions document, a specific real portfolio holding it
-has been matched to (directly or via a real, evidence-based supply-chain/material
-link), and the exact evidence snippet that justified the match. Write a 2-3 sentence
-recommendation for the portfolio holder.
+You are given: a news article or regulatory/sanctions document, a specific real
+portfolio holding it has been matched to (directly or via a real, evidence-based
+supply-chain/material link), the exact evidence snippet that justified the match, and
+optionally the holding's real recent price move. Write a 2-3 sentence recommendation
+for the portfolio holder.
 
 Rules, no exceptions:
 - Simulation/informational only. NEVER suggest buying, selling, or any specific trade
@@ -45,11 +46,38 @@ Rules, no exceptions:
   reviewing sector concentration, monitoring further developments, or reading the
   underlying filing -- never as investment advice.
 - If the evidence is only a plausible/indirect link (relationship == "supply_chain"),
-  say so explicitly; do not overstate certainty."""
+  say so explicitly; do not overstate certainty.
+- If a real recent price move is given, state it only as context ("the stock has
+  already moved X% over the period") -- never as a signal to act on, and never imply
+  the move was caused by this specific document unless the evidence says so."""
+
+
+def _price_move_note(symbol: str) -> str | None:
+    """A real, recent price move for `symbol`, as plain context -- not a trading
+    signal. Uses the same Yahoo integration the frontend's own stock pages already
+    call. Returns None (rather than raising) on any failure -- rate limits or an
+    unrecognized ticker shouldn't fail the whole alert scan, and callers must not
+    fabricate a number when this returns None.
+    """
+    try:
+        from app.integrations.yahoo.service import fetch_history
+
+        history = fetch_history(symbol, "5d")
+    except Exception:
+        return None
+    candles = history.get("candles") or []
+    if len(candles) < 2:
+        return None
+    first_close, last_close = candles[0]["Close"], candles[-1]["Close"]
+    if not first_close:
+        return None
+    pct = (last_close - first_close) / first_close * 100
+    currency = history["ticker"].get("currency") or ""
+    return f"{symbol} has moved {pct:+.1f}% over the past 5 trading days ({currency} terms)."
 
 
 def _generate_recommendation(
-    client, *, document_title: str, match: RelevanceMatch, industry: str | None
+    client, *, document_title: str, match: RelevanceMatch, industry: str | None, price_note: str | None = None
 ) -> str:
     relationship_note = (
         "a direct mention of this holding" if match.relationship == "direct"
@@ -60,8 +88,9 @@ def _generate_recommendation(
         f"Portfolio holding: {match.symbol}"
         + (f" (SEC industry: {industry})" if industry else "")
         + f"\nMatch type: {relationship_note}\n"
-        f"Evidence snippet actually found: \"{match.evidence_snippet}\"\n\n"
-        "Write the recommendation now."
+        f"Evidence snippet actually found: \"{match.evidence_snippet}\""
+        + (f"\nReal recent price context: {price_note}" if price_note else "")
+        + "\n\nWrite the recommendation now."
     )
     response = client.converse(
         modelId=BEDROCK_MODEL_ID,
@@ -77,6 +106,7 @@ def run_alert_scan(
     documents: list[dict],
     portfolios: dict[str, list[str]],
     bedrock_client=None,
+    strict_materials_only: bool = False,
 ) -> list[dict]:
     """`documents` is a list of {"document_number", "title", "abstract", ...} (the
     shape `ingestion.regulatory_events.search_documents*` returns, as plain dicts).
@@ -93,6 +123,12 @@ def run_alert_scan(
     here given the time available.
     """
     client = bedrock_client or boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+    price_note_cache: dict[str, str | None] = {}
+
+    def _cached_price_note(symbol: str) -> str | None:
+        if symbol not in price_note_cache:
+            price_note_cache[symbol] = _price_move_note(symbol)
+        return price_note_cache[symbol]
 
     alerts: list[dict] = []
     # Build each portfolio's exposure graph once per document (not once per portfolio
@@ -103,7 +139,9 @@ def run_alert_scan(
         for user_id, symbols in portfolios.items():
             if not symbols:
                 continue
-            graph_json = load_company_graph(portfolio_symbols=symbols, event_description=doc_text)
+            graph_json = load_company_graph(
+                portfolio_symbols=symbols, event_description=doc_text, strict_materials_only=strict_materials_only
+            )
             matches = check_relevance(doc_text, graph_json, symbols)
             if not matches:
                 continue  # genuinely not relevant to this user's holdings -- correctly suppressed
@@ -113,7 +151,11 @@ def run_alert_scan(
             for m in matches:
                 try:
                     rec_text = _generate_recommendation(
-                        client, document_title=doc.get("title", ""), match=m, industry=industries.get(m.symbol)
+                        client,
+                        document_title=doc.get("title", ""),
+                        match=m,
+                        industry=industries.get(m.symbol),
+                        price_note=_cached_price_note(m.symbol),
                     )
                 except Exception as exc:
                     rec_text = None

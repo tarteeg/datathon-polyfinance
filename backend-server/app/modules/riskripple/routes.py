@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.riskripple.alerts.db import get_all_portfolios
 from app.riskripple.alerts.pipeline import run_alert_scan
-from app.riskripple.ingestion import macro_fred, regulatory_events, sanctions_gac, sanctions_ofac
+from app.riskripple.ingestion import macro_fred, news_stocksfeed, regulatory_events, sanctions_gac, sanctions_ofac
 
 router = APIRouter(prefix="/riskripple", tags=["riskripple"])
 
@@ -233,3 +233,36 @@ def alerts_scan(request: AlertScanRequest):
 
     alerts = run_alert_scan(documents=documents, portfolios=portfolios)
     return {"documents_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
+
+
+@router.post("/alerts/scan-news")
+def alerts_scan_news(limit_per_ticker: int = Query(5, ge=1, le=20)):
+    """Scan each real user's real portfolio against that SAME portfolio's actual
+    held tickers' real recent news (via the app's existing StocksFeed integration),
+    checking each article against EVERY holding in the portfolio (not just the
+    ticker the article was fetched for) -- a news item about one holding can be a
+    real trickle-down risk to another via the same evidence-gated exposure graph
+    `/alerts/scan` already uses for regulatory documents. Reuses that exact same
+    relevance/recommendation pipeline; only the document source differs.
+
+    Most real news (earnings notes, analyst calls, executive gossip) is not a
+    trickle-down risk event, so articles are pre-filtered to ones containing an
+    independent trade/export/sanctions/supply-chain signal before being checked --
+    see `ingestion.news_stocksfeed._has_trade_signal`.
+    """
+    try:
+        portfolios = get_all_portfolios()
+    except Exception as exc:
+        raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
+
+    if not portfolios:
+        return {"articles_scanned": 0, "portfolios_checked": 0, "alerts": []}
+
+    all_tickers = sorted({ticker for symbols in portfolios.values() for ticker in symbols})
+    try:
+        documents = news_stocksfeed.fetch_news_documents_for_tickers(all_tickers, limit_per_ticker=limit_per_ticker)
+    except Exception as exc:
+        raise HTTPException(502, f"StocksFeed fetch failed: {exc}") from exc
+
+    alerts = run_alert_scan(documents=documents, portfolios=portfolios, strict_materials_only=True)
+    return {"articles_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
