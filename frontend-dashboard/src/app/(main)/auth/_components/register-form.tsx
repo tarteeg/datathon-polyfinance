@@ -15,6 +15,7 @@ const formSchema = z
     email: z.email({ message: "Please enter a valid email address." }),
     password: z.string().min(8, { message: "Password must be at least 8 characters." }).max(128),
     confirmPassword: z.string().min(1, { message: "Please confirm your password." }),
+    riskProfile: z.enum(["conservative", "balanced", "aggressive"]),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match.",
@@ -29,6 +30,7 @@ export function RegisterForm() {
       email: "",
       password: "",
       confirmPassword: "",
+      riskProfile: "balanced",
     },
   });
 
@@ -39,6 +41,7 @@ export function RegisterForm() {
         name: data.name,
         email: data.email,
         password: data.password,
+        riskProfile: data.riskProfile,
       });
       if (error) {
         form.setError("root", { message: error.message || "Authentication failed. Please try again." });
@@ -128,6 +131,33 @@ export function RegisterForm() {
             </Field>
           )}
         />
+        <Controller
+        control={form.control}
+        name="riskProfile"
+        render={({ field, fieldState }) => (
+          <Field className="gap-1.5" data-invalid={fieldState.invalid}>
+            <FieldLabel htmlFor="register-risk-profile">
+              Investment Risk Profile
+            </FieldLabel>
+
+            <select
+              {...field}
+              id="register-risk-profile"
+              disabled={form.formState.isSubmitting}
+              aria-invalid={fieldState.invalid}
+              className="w-full rounded-md border p-2"
+            >
+              <option value="conservative">Conservative - Low Risk</option>
+              <option value="balanced">Balanced - Moderate Risk</option>
+              <option value="aggressive">Aggressive - High Risk</option>
+            </select>
+
+            {fieldState.invalid && (
+              <FieldError errors={[fieldState.error]} />
+            )}
+          </Field>
+        )}
+      />
       </FieldGroup>
       {form.formState.errors.root && <FieldError errors={[form.formState.errors.root]} />}
       <Button className="w-full" type="submit" disabled={form.formState.isSubmitting}>
