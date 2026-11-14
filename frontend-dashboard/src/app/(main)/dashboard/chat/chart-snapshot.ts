@@ -5,7 +5,12 @@ export function chartSnapshot(symbol: string, period: string, history: StockHist
   const points = candles.map(({ time, Close }) => ({ time, Close }));
   const first = points[0];
   const last = points[points.length - 1];
-  const baseline = period === "1d" ? (ticker.previousClose ?? null) : first.Close;
+  const baseline =
+    period === "mtd"
+      ? (ticker.priorMonthClose ?? null)
+      : period === "1d"
+        ? (ticker.previousClose ?? null)
+        : first.Close;
   let biggestMove: { from: number; to: number; percent: number } | null = null;
   for (let i = 1; i < points.length; i++) {
     const before = points[i - 1];
@@ -28,7 +33,7 @@ export function chartSnapshot(symbol: string, period: string, history: StockHist
       quote: ticker.regularMarketPrice,
       quoteTime: ticker.regularMarketTime,
       baseline,
-      baselineLabel: period === "1d" ? "Previous close" : "First chart close",
+      baselineLabel: period === "mtd" ? "Prior month close" : period === "1d" ? "Previous close" : "First chart close",
       changePercent: baseline ? (ticker.regularMarketPrice / baseline - 1) * 100 : null,
       biggestMove,
     },

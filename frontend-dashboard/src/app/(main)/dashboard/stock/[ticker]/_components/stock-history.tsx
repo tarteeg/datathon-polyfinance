@@ -5,7 +5,7 @@ import { chartSnapshot } from "../../../chat/chart-snapshot";
 import { ExplainChartButton } from "./explain-chart-button";
 import { formatCurrency } from "@/lib/utils";
 import { fetchHistory } from "@/server/stock-history";
-import { PriceChart } from "./price-chart";
+import { StockPriceChart } from "../../../_components/stock-price-chart";
 import { PricePanel } from "./price-panel";
 
 export async function StockHistory({ symbol, period }: { symbol: string; period: string }) {
@@ -27,7 +27,7 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
     );
 
   const { ticker, candles } = history;
-  const baseline = period === "1d" ? ticker.previousClose : candles[0]?.Close;
+  const baseline = period === "mtd" ? ticker.priorMonthClose : period === "1d" ? ticker.previousClose : candles[0]?.Close;
   const change = baseline == null ? null : Number((ticker.regularMarketPrice - baseline).toFixed(2));
   const tone =
     change && change > 0
@@ -76,7 +76,7 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
       }
     >
       {candles.length ? (
-        <PriceChart
+        <StockPriceChart symbol={symbol}
           points={candles.map(({ time, Close }) => ({ time, Close }))}
           period={period}
           currency={ticker.currency}

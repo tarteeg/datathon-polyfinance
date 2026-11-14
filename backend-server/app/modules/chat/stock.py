@@ -10,6 +10,7 @@ from app.modules.stocks.schemas import Period
 class StockQuery(BaseModel):
     ticker: str = Field(pattern=r"^[A-Za-z0-9^][A-Za-z0-9.^=-]{0,19}$")
     period: Period = "1d"
+    show_chart: bool = Field(default=False, description="True for performance, trend, or explicit chart questions; false for a simple quote.")
 
 
 STOCK_TOOL = {"toolSpec": {
@@ -17,7 +18,7 @@ STOCK_TOOL = {"toolSpec": {
     "description": (
         "Look up one stock by its Yahoo Finance symbol. Returns the company name, exchange, "
         "latest regular-session price, currency, timestamp, and observed price history statistics. "
-        "Use 1d for a quote, 1mo for a month, ytd for year to date. Use the requested share class."
+        "Use mtd for this calendar month, 1mo for the past/trailing month, 1d for a quote, ytd for year to date. Use the requested share class."
     ),
     "inputSchema": {"json": StockQuery.model_json_schema()},
 }}
@@ -36,11 +37,13 @@ def lookup_stock(query: StockQuery) -> dict:
     price = ticker["regularMarketPrice"]
     first = candles[0] if candles else None
     baseline = ticker.get("previousClose") if query.period == "1d" else first["Close"] if first else None
+    if query.period == "mtd":
+        baseline = ticker.get("priorMonthClose") if candles else None
     result = {
         "symbol": symbol, "name": ticker["name"], "exchange": ticker.get("exchange"),
         "currency": ticker.get("currency"), "price": price, "asOf": utc(ticker.get("regularMarketTime")),
         "period": query.period, "previousClose": ticker.get("previousClose"),
-        "baselineDescription": "previous close" if query.period == "1d" else "first candle close",
+        "baselineDescription": {"1d": "previous close", "mtd": "prior month close"}.get(query.period, "first candle close"),
         "baseline": baseline, "priceChange": price - baseline if baseline is not None else None,
         "percentChange": (price / baseline - 1) * 100 if baseline else None,
         "history": None,
@@ -55,6 +58,8 @@ def lookup_stock(query: StockQuery) -> dict:
             "low": low["Low"], "lowCandle": utc(low["time"]),
             "interval": yahoo.INTERVALS[query.period],
         }
+    if candles and query.show_chart:
+        result["points"] = [{"time": candle["time"], "Close": candle["Close"]} for candle in candles]
     return result
 
 

@@ -10,12 +10,14 @@ export type PricePoint = { time: number; Close: number };
 
 const config = { Close: { label: "Closing price", color: "currentColor" } };
 
-export function PriceChart({
+export function StockPriceChart({
+  symbol,
   tone,
   points,
   period,
   currency,
 }: {
+  symbol: string;
   tone: string;
   points: PricePoint[];
   period: string;
@@ -51,7 +53,7 @@ export function PriceChart({
           .map((point) => point.time);
 
   return (
-    <ChartContainer config={config} className="aspect-auto h-72 w-full sm:h-96">
+    <ChartContainer aria-label={`${symbol} price chart (${period})`} config={config} className="aspect-auto h-72 w-full sm:h-96">
       <AreaChart accessibilityLayer data={points} margin={{ top: 12, right: 8, bottom: 4 }}>
         <defs>
           <linearGradient id={gradient} className={tone} x1="0" x2="0" y1="0" y2="1">

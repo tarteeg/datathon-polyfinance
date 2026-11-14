@@ -1,4 +1,4 @@
-import { PriceChart } from "../../stock/[ticker]/_components/price-chart";
+import { StockPriceChart } from "../../_components/stock-price-chart";
 import type { ChartSnapshot } from "../chart-snapshot";
 
 export function SavedChart({ snapshot }: { snapshot: ChartSnapshot }) {
@@ -20,7 +20,7 @@ export function SavedChart({ snapshot }: { snapshot: ChartSnapshot }) {
         Chart: {date(facts.firstCandle.time)} – {date(facts.lastCandle.time)} UTC. Quote:{" "}
         {facts.quoteTime ? date(facts.quoteTime) + " UTC" : "time unavailable"}.
       </p>
-      <PriceChart points={points} period={facts.period} currency={facts.currency} tone="text-primary" />
+      <StockPriceChart symbol={facts.symbol} points={points} period={facts.period} currency={facts.currency} tone="text-primary" />
     </figure>
   );
 }
