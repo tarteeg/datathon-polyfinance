@@ -43,15 +43,15 @@ flowchart TD
 
 ## 3. Phases
 
-### Phase A : cadrage du scénario de démonstration ⬜
-Décisions d'équipe, à prendre avant d'écrire du code. Elles restent identiques dans le prototype, la vidéo, la documentation et la fiche.
-- ⬜ Portefeuille de démonstration : titres et poids (par exemple 3 à 5 FNB diversifiés).
+### Phase A : cadrage du scénario ⬜
+Décisions d'équipe, à prendre avant d'écrire du code.
+- ⬜ Portefeuille de référence : titres et poids (par exemple 3 à 5 FNB diversifiés).
 - ⬜ Fonds réduit et fonds ajouté (le « fonds technologique médiatisé »), avec leurs émetteurs.
 - ⬜ Pourcentage de transfert (10 %, puis 5 % pour l'essai de sensibilité).
 - ⬜ Date d'observation, période d'historique (par exemple 5 ans) et devise de référence (CAD).
 - ⬜ Seuils par persona, annoncés comme des choix de l'équipe. Exemple : une baisse maximale historique supérieure à 20 % est signalée pour un horizon de 3 à 5 ans (Robert).
 
-**Critère de sortie :** une fiche de scénario d'une demi-page, validée par l'équipe.
+**Critère de sortie :** le scénario (portefeuille, fonds, transfert, date, devise, seuils) est écrit et validé par l'équipe.
 
 ### Phase B : données ⬜
 - ⬜ Prix journaliers **ajustés** : nouvelle fonction dans `backend-server/app/integrations/yahoo/service.py`. La fonction actuelle (`fetch_history`) sert les graphiques : elle utilise `auto_adjust=False` et des bougies d'une heure sur un an, ce qui ne convient pas au calcul de la volatilité.
@@ -90,7 +90,7 @@ Cas de test, fournis par les organisateurs :
 - ⬜ `controle_donnees` est imposé en premier par le code, pas laissé au choix du modèle.
 - ⬜ Trace : chaque appel réellement exécuté (nom, entrées, sorties, durée) est enregistré par le code et renvoyé avec la réponse. Le modèle ne la reconstitue pas.
 - ⬜ Consigne système : éducation financière, pas de conseil personnalisé, chiffres seulement issus des outils, contenu des sources traité comme non fiable.
-- ⬜ Décision à prendre : exposer aussi ces outils dans le chat existant, ou garder une route séparée. Je recommande la route séparée : elle ne touche pas au chat de Ben et se démontre plus clairement.
+- ⬜ Décision à prendre : exposer aussi ces outils dans le chat existant, ou garder une route séparée. Je recommande la route séparée : elle ne touche pas au chat de Ben et isole la trace de l'analyse.
 
 **Critère de sortie :** une requête du scénario renvoie une explication et une trace complète, en local.
 
@@ -130,11 +130,6 @@ Dans `frontend-dashboard/src/app/(main)/dashboard/`, en suivant `frontend-dashbo
 
 **Critère de sortie :** le scénario fonctionne sur le site déployé, avec la trace et l'appel Bedrock visibles.
 
-### Phase I : démonstration ⬜
-- ⬜ Figer le scénario (actif, date, hypothèses) et ne plus fusionner dans `main` avant l'enregistrement.
-- ⬜ Vidéo d'environ cinq minutes, découpage suggéré : 30 s sur la décision, 90 s sur Amira, 60 s sur le changement de persona, 60 s sur les sources, les calculs et l'appel Bedrock, 60 s sur le transfert ramené à 5 % et une limite.
-- ⬜ Reprendre les mêmes chiffres dans la documentation et la fiche d'une page.
-
 ## 4. Ordre et temps estimé
 
 | Ordre | Phase | Durée indicative | Dépend de |
@@ -147,11 +142,10 @@ Dans `frontend-dashboard/src/app/(main)/dashboard/`, en suivant `frontend-dashbo
 | 6 | F : personas | 1 h | D |
 | 7 | G : interface | 2 à 3 h | D (E et F pour finir) |
 | 8 | H : intégration | 1 h | Tout |
-| 9 | I : démonstration | 2 h | H |
 
-Total : environ 12 à 13 heures. Ce sont des estimations, pas des mesures. Les phases E, F et G peuvent avancer en parallèle si plusieurs coéquipiers travaillent.
+Total : environ 10 à 11 heures. Ce sont des estimations, pas des mesures. Les phases E, F et G peuvent avancer en parallèle si plusieurs coéquipiers travaillent.
 
-**Coupe-feu.** Si dimanche à midi la phase D ne fonctionne pas, réduire la portée : une seule mesure (l'exposition sectorielle), deux personas, la trace sans le vérificateur. Une démonstration complète d'un cas simple vaut mieux qu'un cas riche inachevé.
+**Coupe-feu.** Si dimanche à midi la phase D ne fonctionne pas, réduire la portée : une seule mesure (l'exposition sectorielle), deux personas, la trace sans le vérificateur. Un cas simple qui fonctionne de bout en bout vaut mieux qu'un cas riche inachevé.
 
 ## 5. Risques
 
@@ -163,7 +157,7 @@ Total : environ 12 à 13 heures. Ce sont des estimations, pas des mesures. Les p
 | Le modèle invente ou arrondit un chiffre | Vérificateur de la phase E |
 | Latence de plusieurs appels Bedrock | Limite de 4 tours, indicateur de progression dans l'interface |
 | Coût des appels Bedrock | Route protégée par la clé, une seule tâche par service |
-| Merge qui casse le site avant la vidéo | Figer `main` avant l'enregistrement, attendre la fin du déploiement canary |
+| Merge qui casse le site déployé | Tester en local avant la pull request, vérifier le site après la fin du déploiement canary |
 | Manque de temps | Coupe-feu de la section 4 |
 
 ## 6. Hors de portée
