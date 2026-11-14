@@ -1,9 +1,16 @@
-// Result of the backend's check that every figure in a reply comes from a tool result.
+// Result of the backend's check of a reply: figures matched to tool results, then a model's review of its statements.
 export type FigureCheck = {
   code: "verified" | "review" | "rejected" | "unverified";
   checked: number;
   unmatched: { text: string; location: string; status: string }[];
   derived: { text: string; location: string; operands: string[][] }[];
+  // Absent on replies saved before the statement review existed.
+  findings?: {
+    rule: "causal_claim" | "advice" | "unreported_gap" | "mismatched_series";
+    quote: string;
+    reason: string;
+  }[];
+  judge?: "off" | "done" | "unavailable";
 };
 
 export type ChatActivity = {

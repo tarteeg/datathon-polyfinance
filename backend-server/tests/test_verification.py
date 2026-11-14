@@ -219,7 +219,7 @@ def test_figure_in_table_cells_is_checked():
 def test_report_dictionary_is_serialisable():
     report = verdict("Exposition de 28 %.")
     assert json.loads(json.dumps(report.to_dict())) == {
-        "verdict": "rejeté", "code": "rejected", "checked": 1, "derived": [],
+        "verdict": "rejeté", "code": "rejected", "checked": 1, "derived": [], "findings": [], "judge": "off",
         "unmatched": [{"text": "28 %", "location": "explanation", "status": "unmatched"}]}
 
 

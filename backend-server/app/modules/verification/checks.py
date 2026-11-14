@@ -9,6 +9,7 @@ could not be read).
 from dataclasses import dataclass
 from typing import Any
 
+from app.modules.verification.judge import Finding
 from app.modules.verification.ledger import ToolRecord
 from app.modules.verification.numbers import (
     Claim,
@@ -45,6 +46,8 @@ class ClaimResult:
 class Report:
     verdict: str
     results: tuple[ClaimResult, ...] = ()
+    findings: tuple[Finding, ...] = ()  # stage 2, see judge.py
+    judge: str = "off"  # off, done or unavailable
 
     @property
     def unmatched(self) -> tuple[ClaimResult, ...]:
@@ -58,6 +61,8 @@ class Report:
             "unmatched": [{"text": r.text, "location": r.location, "status": r.status} for r in self.unmatched],
             "derived": [{"text": r.text, "location": r.location,
                          "operands": [list(f.operands) for f in r.found]} for r in self.results if r.status == "derived"],
+            "findings": [finding.model_dump() for finding in self.findings],
+            "judge": self.judge,
         }
 
 

@@ -18,10 +18,17 @@ const labels: Record<string, string> = {
 };
 
 const verdicts: Record<FigureCheck["code"], string> = {
-  verified: "All figures found in sources",
-  review: "Figures to review",
+  verified: "Figures found in sources",
+  review: "Needs review",
   rejected: "Figures without a source",
   unverified: "Not checked",
+};
+
+const rules: Record<NonNullable<FigureCheck["findings"]>[number]["rule"], string> = {
+  causal_claim: "Cause not established by the data",
+  advice: "Reads as advice",
+  unreported_gap: "Data gap not mentioned",
+  mismatched_series: "Series compared without saying they differ",
 };
 
 const VERIFY = "verify_answer";
@@ -49,6 +56,19 @@ function FigureCheckDetails({ check }: { check: FigureCheck }) {
           </ul>
         </div>
       )}
+      {check.findings && check.findings.length > 0 && (
+        <div>
+          <p className="font-medium">Statements to review</p>
+          <ul className="list-inside list-disc">
+            {check.findings.map((item) => (
+              <li key={`${item.rule}-${item.quote}`}>
+                {rules[item.rule]}: <q>{item.quote}</q>. {item.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {check.judge === "unavailable" && <p className="text-muted-foreground">The statement review was unavailable.</p>}
       {check.derived.length > 0 && (
         <div>
           <p className="font-medium">Computed from other figures, not returned by a tool</p>
@@ -70,7 +90,7 @@ export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[];
   if (!steps?.length) return null;
   const tools = steps.filter((item) => item.tool !== VERIFY);
   const check = steps.find((item) => item.tool === VERIFY)?.output;
-  const active = streaming && tools.find((item) => item.status === "running");
+  const active = streaming && steps.find((item) => item.status === "running");
   let Icon = Wrench;
   if (active) Icon = LoaderCircle;
   else if (check && !tools.length) Icon = ShieldCheck;

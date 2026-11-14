@@ -157,12 +157,23 @@ Réalisée le 14 novembre 2026.
 
 **Critère de sortie :** atteint pour le backend : le pas `verify_answer` apparaît dans le déroulé d'une vraie question de transfert avec son verdict et le nombre de chiffres contrôlés, et une question simple répond toujours. L'affichage reste à vérifier dans le navigateur.
 
-### Phase D : étage Bedrock ⬜
-- ⬜ `verification/judge.py` : un appel `converse` avec la réponse, les sorties d'outils et les règles de la section 5. Sortie structurée, validée par Pydantic. Si la sortie est invalide, le verdict de l'étage 2 est `non évalué` et le contrôle de l'étage 1 reste affiché.
-- ⬜ Limite de jetons et délai d'attente fixés. Une panne de Bedrock ne doit jamais empêcher la réponse d'arriver.
-- ⬜ Le texte des articles reste traité comme non fiable, y compris dans cet appel.
+### Phase D : étage Bedrock ✅
+Réalisée le 14 novembre 2026.
+- ✅ `verification/judge.py` : un appel `converse` avec la réponse, la question et les sorties d'outils (6 000 caractères par outil, 24 000 au total), `toolChoice` forcé sur `report_findings`, `temperature` 0. La sortie est validée par Pydantic (règle parmi quatre, citation, raison ; les textes trop longs sont coupés à 300 caractères, 8 constats au plus). Le texte des articles est présenté comme donnée, jamais comme consigne.
+- ✅ Quatre règles : `causal_claim`, `advice`, `unreported_gap`, `mismatched_series`. Le juge ne juge jamais un chiffre.
+- ✅ Garde-fous en code, après la réponse du modèle. Un constat est écarté si (1) sa citation n'est pas dans la réponse (comparaison insensible à la casse et aux espaces), (2) pour `unreported_gap` et `mismatched_series`, aucun outil n'a un statut `partial` ou `failed`, (3) pour `causal_claim`, la citation ne contient aucun mot de causalité (« à cause de », « because », « driven by »…).
+- ✅ Intégration : `step.py` envoie d'abord `verify_answer` en `running`, puis le résultat. Le juge peut faire passer `validé` à `à réserve`, jamais rejeter. Une panne (modèle, réseau, sortie invalide) donne `judge: unavailable` et le verdict de l'étage 1 reste. Délai de lecture de 30 s, une seule tentative.
+- ✅ Décision D3 : le même modèle (`BEDROCK_MODEL_ID`). Seule variable ajoutée, facultative : `VERIFIER_JUDGE=off` désactive l'étage (documentée dans `.env.example`). Aucun droit IAM nouveau : même modèle, même appel `converse`.
+- ✅ Frontend : constats listés sous « Statements to review » avec le nom de la règle, citation et raison ; message si le juge est indisponible ; le pas affiche un indicateur pendant l'appel. Biome : aucune erreur dans les deux fichiers touchés (les avertissements restants existaient déjà). `tsc` : aucune erreur dans ces fichiers.
+- ✅ Vérifié avec le vrai modèle :
+  - 4 réponses fautives écrites à la main (cause tirée d'un titre, conseil d'achat, lacune non signalée, séries de périodes et devises différentes), 4 passages chacun : **16 sur 16 détectées**, dans le bon sens. Une réponse prudente et une réponse qui signale sa lacune passent sans constat.
+  - 10 réponses réelles du modèle (transfert, concentration, risque historique, conversion), dont 6 passages de `risk-two` : **aucun constat**.
+  - Durée de l'étage : 1 à 3 secondes.
+- ⚠️ Deux défauts trouvés pendant l'essai et corrigés : le juge signalait à tort une « lacune » dans une réponse qui la mentionnait (2 passages sur 4), et un constat valide était écarté parce que le juge avait mis la première lettre en minuscule. Après correction, plus de faux constat sur les 10 réponses réelles.
+- ⚠️ Limites : l'étage repose sur un modèle, donc ses constats varient d'un passage à l'autre (le garde-fou réduit les faux positifs mais ne les supprime pas). Il n'y a eu aucune réponse réelle fautive à lui soumettre : le taux de détection vient de cas écrits à la main. Le mot « complet » ou « défensif » n'est jugé que si la citation passe les garde-fous. Chaque réponse coûte un appel Bedrock de plus.
+- ⚠️ Non vérifié : l'affichage des constats dans le navigateur.
 
-**Critère de sortie :** une réponse qui attribue un mouvement à un titre de presse reçoit une réserve, et une réponse prudente passe.
+**Critère de sortie :** atteint. Une réponse qui attribue un mouvement à un titre reçoit une réserve avec la citation, et une réponse prudente passe.
 
 ### Phase E : correction et démonstration ⬜
 - ⬜ Reprise unique (décision D2) : si le verdict est `rejeté`, renvoyer au générateur la liste des nombres sans source et demander une réponse corrigée. Le déroulé montre les deux tentatives.
@@ -172,7 +183,7 @@ Réalisée le 14 novembre 2026.
 ### Phase F : déploiement ⬜
 - ⬜ Récupérer `main` avant la pull request (Ben y fusionne régulièrement).
 - ⬜ Pull request de `agent-verificateur` vers `main`. Le merge déclenche le déploiement automatique (10 à 15 minutes, canary).
-- ⬜ Aucune nouvelle variable ni nouveau droit IAM tant que le même modèle est utilisé (décision D3).
+- ⬜ Aucun droit IAM nouveau (même modèle). Variable facultative `VERIFIER_JUDGE=off` pour désactiver l'étage 2. Le chat gagne un appel Bedrock de 1 à 3 secondes par réponse : à surveiller sur l'URL publique.
 - ⬜ Tester une question de transfert sur l'URL publique, après la fin du déploiement.
 
 ## 7. Cas de test
