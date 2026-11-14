@@ -82,13 +82,17 @@ Pour reconstruire après une modification : produire l'archive (`git archive --f
 
 **Critère de sortie :** atteint. Les deux images sont dans ECR avec leur étiquette.
 
-### Phase 4 : secrets ⬜
-- ⬜ Créer dans Secrets Manager : `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `BETTER_AUTH_SECRET`, `DATABASE_CA_CERT`.
-- ⬜ Ne jamais écrire les valeurs dans Git, dans un Dockerfile ni dans les journaux.
-- ⬜ Donner au rôle d'exécution des tâches ECS le droit de lire uniquement ces secrets.
-- ⬜ Garder le certificat sous la limite de 128 Ko par variable d'environnement de Linux (le bundle `us-east-1` fait environ 4,5 Ko).
+### Phase 4 : secrets ✅
+Réalisé le 14 novembre 2026.
+- ✅ Un seul secret JSON, `polyfinance/app`, dans Secrets Manager (`us-east-1`), avec six clés : `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_CA_CERT` et `BETTER_AUTH_SECRET`. Une tâche ECS peut référencer une clé précise du JSON.
+- ✅ `BETTER_AUTH_SECRET` est un nouveau secret aléatoire de 32 octets, différent de celui du développement local.
+- ✅ Les valeurs sont passées de `.env.local` à AWS par un script local, sans affichage. Elles n'apparaissent ni dans Git, ni dans un Dockerfile, ni dans les journaux.
+- ✅ Vérifié : le secret contient les six clés, et une connexion TLS à Aurora réussit avec les valeurs qu'il contient. Le certificat (4 575 caractères) reste très en dessous de la limite de 128 Ko par variable d'environnement.
+- ✅ Rôle d'exécution `polyfinance-ecs-execution-role` (approbation : `ecs-tasks.amazonaws.com`, limitée à ce compte). Politiques : `AmazonECSTaskExecutionRolePolicy` (lecture des images, écriture des journaux) et une politique en ligne qui autorise `secretsmanager:GetSecretValue` sur `polyfinance/app` uniquement. Simulation : lecture autorisée sur ce secret, refusée sur les autres.
+- ⬜ Les variables non secrètes (`DATABASE_PORT`, `BACKEND_API_URL`, `BETTER_AUTH_URL`, `STOCKSFEED_BASE_URL`) iront comme variables d'environnement ordinaires en phase 5.
+- ⬜ Rôle de tâche du backend pour Bedrock : à créer en phase 6.
 
-**Critère de sortie :** chaque secret est lisible par le rôle d'exécution, et par lui seul.
+**Critère de sortie :** atteint. Le secret est lisible par le rôle d'exécution, et par lui seul.
 
 ### Phase 5 : services ECS Express Mode ⬜
 - ⬜ Créer le service backend à partir de l'image ECR. Port 8000. Variable `STOCKSFEED_BASE_URL`. Journaux dans CloudWatch.
