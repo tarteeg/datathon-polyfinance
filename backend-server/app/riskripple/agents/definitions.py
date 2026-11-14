@@ -92,6 +92,11 @@ this specific event names that load_company_graph's fixed KNOWN_SUPPLIER_ALIASES
 doesn't already catch. Use propose_candidate_entities to surface more candidates from
 the event text, then use search_filings_fulltext and search_sec_edgar_live to check
 whether any held company's real filing disclosure actually supports a connection.
+hybrid_search_evidence is the preferred first call for an open-ended question about
+one holding ("does this company's filing say anything about X?") -- it combines
+literal textual matching with real semantic retrieval over the Knowledge Base in one
+call, and always prefer its literal_matches over its semantic_evidence when both are
+present, since a literal match is the stronger claim.
 Never treat a candidate as a relationship until a tool call has found literal textual
 evidence for it.
 
