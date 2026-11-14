@@ -1,4 +1,5 @@
 import { Check, ChevronDown, CircleAlert, LoaderCircle, ShieldCheck, Wrench } from "lucide-react";
+
 import type { ChatActivity, FigureCheck } from "@/lib/chat-stream";
 
 const labels: Record<string, string> = {
@@ -70,7 +71,9 @@ export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[];
   const tools = steps.filter((item) => item.tool !== VERIFY);
   const check = steps.find((item) => item.tool === VERIFY)?.output;
   const active = streaming && tools.find((item) => item.status === "running");
-  const Icon = active ? LoaderCircle : check && !tools.length ? ShieldCheck : Wrench;
+  let Icon = Wrench;
+  if (active) Icon = LoaderCircle;
+  else if (check && !tools.length) Icon = ShieldCheck;
   const toolSummary = `Activity · ${tools.length} tool call${tools.length === 1 ? "" : "s"}`;
   return (
     <details className="group/activity rounded-xl border bg-muted/20 text-sm">
@@ -94,9 +97,11 @@ export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[];
                 <summary className="flex cursor-pointer items-center gap-2">
                   <StatusIcon aria-hidden className="size-4" />
                   <span className="flex-1">{labels[step.tool] ?? step.tool}</span>
-                  <span className={result ? "text-muted-foreground" : "capitalize text-muted-foreground"}>
-                    {result ? verdicts[result.code] : status}
-                  </span>
+                  {result ? (
+                    <span className="text-muted-foreground">{verdicts[result.code]}</span>
+                  ) : (
+                    <span className="capitalize text-muted-foreground">{status}</span>
+                  )}
                 </summary>
                 {result ? (
                   <FigureCheckDetails check={result} />
