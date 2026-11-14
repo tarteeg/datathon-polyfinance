@@ -165,7 +165,20 @@ def summarize_event_evidence(event_title: str, filing_symbol: str, fixtures_dir:
             # S3 object's filename instead of trusting an unscoped top-5.
             target_suffix = f"/{filing_symbol.upper()}_10K.txt"
             broad = bedrock_retriever.retrieve(event_title, top_k=50)
-            results = [r for r in broad if r.chunk.source_url and r.chunk.source_url.endswith(target_suffix)][:5]
+            # Bedrock's retrieve always returns its top-k by similarity rank, even
+            # when nothing is genuinely relevant -- confirmed live: a query with no
+            # real connection to any indexed filing ("professional sports league
+            # broadcasting rights") still topped out at score 0.64, while every
+            # confirmed genuine match this session scored 0.74-0.78+. Without a
+            # floor, "got results back" silently became "found: true" for an
+            # unrelated top passage -- the same false-confidence failure mode as
+            # treating nonempty lexical results as relevant ones (see
+            # LocalLexicalRetriever.retrieve's own min_score guidance above).
+            _MIN_BEDROCK_SCORE = 0.70
+            results = [
+                r for r in broad
+                if r.chunk.source_url and r.chunk.source_url.endswith(target_suffix) and r.score >= _MIN_BEDROCK_SCORE
+            ][:5]
             if results:
                 retriever_used = "bedrock"
         except Exception:
@@ -179,7 +192,13 @@ def summarize_event_evidence(event_title: str, filing_symbol: str, fixtures_dir:
             source_url=filing["metadata"]["source_url"] if filing["metadata"] else None,
         )
         local_retriever = LocalLexicalRetriever(chunks)
-        results = local_retriever.retrieve(event_title, top_k=5)
+        # min_score=0.15 is this retriever's own documented threshold (see its
+        # retrieve() docstring) for "relevant" vs. "nonempty but meaningless
+        # overlap" -- summarize_event_evidence previously used the 0.0 default,
+        # which is why it never correctly reported "no evidence" for an unrelated
+        # query (confirmed live: a sports-broadcasting query against AEE still
+        # returned found=True on bare incidental term overlap).
+        results = local_retriever.retrieve(event_title, top_k=5, min_score=0.15)
         retriever_used = "lexical"
 
     return {
