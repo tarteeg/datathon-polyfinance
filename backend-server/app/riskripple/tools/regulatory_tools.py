@@ -156,7 +156,16 @@ def summarize_event_evidence(event_title: str, filing_symbol: str, fixtures_dir:
         try:
             region = os.environ.get("RISKRIPPLE_KB_REGION", os.environ.get("BEDROCK_REGION", "us-east-1"))
             bedrock_retriever = BedrockKnowledgeBaseRetriever(knowledge_base_id=kb_id, region_name=region)
-            results = bedrock_retriever.retrieve(event_title, top_k=5)
+            # The KB has no per-document filterable metadata attached (confirmed
+            # live: title/document_id come back empty), so a plain top-5 call
+            # searches across ALL ~29 indexed filings, not just `filing_symbol`'s --
+            # confirmed this produced a real false negative for JPM, whose one real
+            # Russia mention was outranked by MSFT/NVDA's longer export-control
+            # sections elsewhere in the KB. Over-fetch and filter client-side by the
+            # S3 object's filename instead of trusting an unscoped top-5.
+            target_suffix = f"/{filing_symbol.upper()}_10K.txt"
+            broad = bedrock_retriever.retrieve(event_title, top_k=50)
+            results = [r for r in broad if r.chunk.source_url and r.chunk.source_url.endswith(target_suffix)][:5]
             if results:
                 retriever_used = "bedrock"
         except Exception:

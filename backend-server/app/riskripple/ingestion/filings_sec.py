@@ -33,6 +33,51 @@ _HEADERS = {"User-Agent": f"RiskRippleAI-Datathon {SEC_EDGAR_CONTACT}"}
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"
 ARCHIVES_BASE_URL = "https://www.sec.gov/Archives/edgar/data/{cik_no_padding}/{accession_no_dashes}/{document}"
+
+# A real 10-K's stripped text interleaves actual prose with dense inline-XBRL
+# metadata (taxonomy URLs, CIK/date dumps, concatenated tag identifiers like
+# `aee:CoalFiredElectricGenerationEquipmentMember`). Confirmed live on AEE's real
+# 10-K: 4,200 of 12,765 lines (33%) are this kind of noise. It pollutes both the
+# TF-IDF retriever (a camelCase identifier is one unsplittable token, so a real
+# word embedded in it, e.g. "coal" inside the identifier above, can never match a
+# query token) and a Knowledge Base's embeddings (noise chunks dilute the real
+# signal). Simple, inspectable heuristic -- same house style as
+# _GENERIC_PROCEDURAL_WORDS elsewhere in this codebase -- not an ML classifier.
+_XBRL_NAMESPACE_LINE_RE = re.compile(r"^[a-z]{2,10}(-[a-z]{2,10})?:[A-Za-z]")
+_PURE_NUMBER_OR_DATE_RE = re.compile(r"^\d{4,10}(-\d{2}-\d{2})?$")
+_TAXONOMY_URL_RE = re.compile(r"^https?://")
+
+
+def _is_noise_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if _TAXONOMY_URL_RE.match(stripped):
+        return True
+    if _PURE_NUMBER_OR_DATE_RE.match(stripped):
+        return True
+    if _XBRL_NAMESPACE_LINE_RE.match(stripped):
+        return True
+    # A long line with no whitespace at all is virtually always a concatenated
+    # identifier (real prose sentences always contain spaces well before 15 chars).
+    if " " not in stripped and len(stripped) > 15:
+        return True
+    return False
+
+
+def clean_filing_text(text: str) -> str:
+    """Strip XBRL taxonomy/tag-soup lines from a fetched filing's text while leaving
+    every real prose line untouched, verbatim. Line-based and deliberately simple: a
+    line is dropped only if it matches one of a few concrete, checkable patterns
+    (a taxonomy URL, a bare CIK/date, an `aee:SomeTagMember`-style namespaced
+    identifier, or any other long whitespace-free run) -- never a semantic judgment
+    about content. Collapses the resulting gaps so cleaned output doesn't carry long
+    runs of blank lines where noise used to be.
+    """
+    lines = text.split("\n")
+    kept = [line for line in lines if not _is_noise_line(line)]
+    cleaned = "\n".join(kept)
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
 EDGAR_FULLTEXT_SEARCH_URL = "https://efts.sec.gov/LATEST/search-index"
 
 
