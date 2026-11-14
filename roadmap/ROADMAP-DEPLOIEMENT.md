@@ -69,12 +69,18 @@ flowchart LR
 
 **Critère de sortie :** les deux images se construisent sans erreur et sans secret dans les couches. À confirmer en phase 3.
 
-### Phase 3 : construction et registre ⬜
-- ⬜ Créer deux dépôts ECR (frontend et backend).
-- ⬜ Créer un projet CodeBuild qui construit les images à partir du dépôt GitHub et les pousse dans ECR. ⚠️ À vérifier : l'accès de CodeBuild au dépôt privé (jeton GitHub ou connexion CodeConnections) et les droits du rôle.
-- ⬜ Étiqueter les images avec le hash du commit, pas seulement `latest`.
+### Phase 3 : construction et registre ✅
+Réalisé le 14 novembre 2026. Le code part dans un bucket S3 privé (archive `git archive` de la branche `deploiement`), et non depuis GitHub : CodeBuild n'a donc besoin d'aucun jeton GitHub.
+- ✅ Dépôts ECR `polyfinance/backend` et `polyfinance/frontend` (analyse à chaque push activée).
+- ✅ Bucket S3 `polyfinance-build-src-<compte>-us-east-1` : accès public bloqué, versionnement activé.
+- ✅ Rôle IAM `polyfinance-codebuild-role` : journaux, push sur ces deux dépôts ECR, lecture du bucket.
+- ✅ Projet CodeBuild `polyfinance-build` (image `aws/codebuild/standard:7.0`, mode privilégié pour Docker, calcul moyen), recette `deploy/buildspec.yml`. Les images de base viennent du miroir public d'AWS (`public.ecr.aws/docker/library`).
+- ✅ Premier build réussi (construction 115 s, envoi 40 s). Images dans ECR, étiquette `24360fd` (hash du commit) : backend 118 Mo, frontend 480 Mo.
+- ✅ Les Dockerfiles ont donc été éprouvés dans un vrai environnement Docker.
 
-**Critère de sortie :** les deux images sont visibles dans ECR avec leur étiquette.
+Pour reconstruire après une modification : produire l'archive (`git archive --format=zip -o source-<hash>.zip HEAD`), la déposer dans `s3://<bucket>/source/`, mettre à jour l'emplacement de la source et la variable `IMAGE_TAG` du projet, puis lancer un build. Un jeton GitHub ou CodeConnections éviterait ces gestes manuels, au prix d'un secret supplémentaire.
+
+**Critère de sortie :** atteint. Les deux images sont dans ECR avec leur étiquette.
 
 ### Phase 4 : secrets ⬜
 - ⬜ Créer dans Secrets Manager : `DATABASE_HOST`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `BETTER_AUTH_SECRET`, `DATABASE_CA_CERT`.
