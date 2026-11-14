@@ -5,7 +5,8 @@ The template runs two apps. Next.js renders the dashboard and owns user accounts
 ```mermaid
 flowchart LR
     Browser -->|Pages, sign-in, portfolio edits| Next["Next.js dashboard"]
-    Next -->|Accounts, sessions, holdings| DB[("Amazon Aurora PostgreSQL")]
+    Next -->|Accounts, sessions, holdings, chat history| DB[("Amazon Aurora PostgreSQL")]
+    API -->|Conversation via Converse| Bedrock["Amazon Bedrock"]
     Next -->|HTTP| API["FastAPI"]
     API -->|Quotes and history via yfinance| Yahoo["Yahoo Finance"]
     API -->|Articles and sector rankings| Feed["StocksFeed API"]
@@ -18,6 +19,14 @@ Visiting `/` opens `/dashboard/home`. The [Next.js proxy](frontend-dashboard/src
 When someone adds a stock, the picker searches the [local S&P 500 list](frontend-dashboard/src/data/sp500.ts). The [server action](frontend-dashboard/src/server/add-portfolio-stock.ts) gets the user ID from the session, validates the ticker and optional share count, and writes to Aurora. The [portfolio table](frontend-dashboard/src/scripts/create-portfolio-table.ts) has one row per user and ticker. A positive decimal records shares held. A blank share count is stored as SQL `NULL`, so users can follow a stock without entering a position size.
 
 After a successful edit, Next.js refreshes the dashboard. The sidebar and Home use the [same holdings query](frontend-dashboard/src/server/portfolio.ts), scoped to the signed-in user. Quotes come from FastAPI when the page renders.
+
+## Finance chat
+
+The dashboard's [chat server action](frontend-dashboard/src/app/(main)/dashboard/chat/actions.ts) checks the Better Auth session and loads the signed-in user's last ten completed exchanges in the selected thread from Aurora. It posts those exchanges and the new question to FastAPI’s authenticated `POST /chat` route. FastAPI supplies the system prompt and calls Bedrock Converse. Ordinary chats send text. Chart threads also send the saved price summary as reference data. After a reply arrives, the action stores the question and reply in a single row in `chat_turns`. A turn number scoped to the user and thread prevents concurrent submissions from appending replies based on stale history. For comparisons, FastAPI prompts the model to append an optional OpenUI comparison table to a standalone Markdown answer. The dashboard validates the table against its component schema before rendering it with OpenUI. Aurora stores the original reply so the same view can reopen from history. The dashboard uses the OpenUI chat provider to select and resume conversations. The dashboard sidebar lists the signed-in user’s threads by recent activity. A thread link opens its history directly, and New chat opens an empty conversation. A thread is persisted with its first completed exchange, titled from its first question, and listed by most recent activity. The chat migration preserves each account’s earlier turns together in a single thread.
+
+On a stock page, **Explain this chart** opens a new thread using the exact quote and closing-price candles that rendered the selected period. The dashboard calculates the percentage move against the same baseline as the stock page (previous close for 1d, first candle close otherwise) and the largest move between adjacent candle closes. The original points and summary are saved with the first turn in `chat_turns.chart_snapshot`. Finance chat exposes a read-only `search_news` tool to Bedrock. A natural-language request can filter StocksFeed by ticker, topic and time window (up to 30 days), or retrieve broad market coverage. The chart’s **Show related news** button uses the same flow with the saved ticker. FastAPI supplies up to three distinct articles and their summaries to Sonnet, then appends publisher links and publication dates to the answer. The dashboard saves the underlying news snapshot with that turn in Aurora and sends the most recent snapshot from the same thread on follow-ups, preserving source order after refresh.
+
+Direct stock questions use a read-only `get_stock` tool on FastAPI. It reuses the Yahoo Finance history service and calculates price change and observed highs and lows from the selected period. Aurora stores the stock summary alongside the answer. Follow-ups receive the most recent stock snapshot from the signed-in user’s thread. Requests for an updated price or a different period trigger a new lookup.
 
 ## Prices, news, and Discover
 

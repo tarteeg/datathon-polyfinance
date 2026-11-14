@@ -35,6 +35,7 @@ import type {
 } from "@/navigation/sidebar/sidebar-items";
 
 import { SearchDialog } from "../header/search-dialog";
+import { ChatHistoryNav } from "./chat-history-nav";
 import { AddStockDialog } from "./add-stock-dialog";
 
 interface NavMainProps {
@@ -164,7 +165,7 @@ export function NavMain({ items, portfolioStocks }: NavMainProps) {
                   })}
                 </>
               )}
-              {group.items.map((item) => (
+              {group.items.map((item) => item.id === "chat" ? <ChatHistoryNav key={item.id} /> : (
                 <NavItem
                   key={item.id}
                   item={item}

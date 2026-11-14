@@ -1,3 +1,8 @@
+import { redirect } from "next/navigation";
+import { requireSession } from "@/lib/session";
+import { startChartChat } from "@/server/chart-chat";
+import { chartSnapshot } from "../../../chat/chart-snapshot";
+import { ExplainChartButton } from "./explain-chart-button";
 import { formatCurrency } from "@/lib/utils";
 import { fetchHistory } from "@/server/stock-history";
 import { PriceChart } from "./price-chart";
@@ -35,6 +40,21 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
     : ticker.regularMarketPrice;
   const asOf = ticker.regularMarketTime != null ? new Date(ticker.regularMarketTime * 1000).toISOString() : undefined;
 
+  const snapshot = candles.length ? chartSnapshot(symbol, period, history) : null;
+
+  async function explain() {
+    "use server";
+    const { user } = await requireSession();
+    if (!snapshot) return "No chart data available.";
+    let id: string;
+    try {
+      id = await startChartChat(user.id, snapshot);
+    } catch {
+      return "Couldn’t save the chart explanation. Please try again.";
+    }
+    redirect(`/dashboard/chat?thread=${id}`);
+  }
+
   return (
     <PricePanel
       symbol={symbol}
@@ -65,6 +85,7 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
       ) : (
         <p>No trading activity in this period.</p>
       )}
+      {snapshot && <ExplainChartButton explain={explain} />}
     </PricePanel>
   );
 }
