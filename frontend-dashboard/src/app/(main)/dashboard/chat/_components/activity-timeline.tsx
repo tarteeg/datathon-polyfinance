@@ -7,6 +7,12 @@ const labels: Record<string, string> = {
   discover_companies: "Find companies",
   get_my_portfolio: "Read your portfolio",
   search_news: "Search news",
+  simulate_transfer: "Simulate a transfer",
+  sector_exposure: "Measure sector exposure",
+  concentration: "Measure concentration",
+  risk_history: "Measure historical risk",
+  check_data: "Check data coverage",
+  convert_currency: "Convert currency",
 };
 
 export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[]; streaming: boolean }) {
