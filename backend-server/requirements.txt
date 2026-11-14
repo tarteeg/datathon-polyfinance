@@ -18,3 +18,4 @@ httpx
 beautifulsoup4
 lxml
 tiktoken
+psycopg2-binary

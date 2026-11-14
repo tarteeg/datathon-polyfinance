@@ -13,9 +13,44 @@ from app.riskripple.graph.company_graph import (
     find_direct_exposure,
     traverse_relationships,
 )
+from app.riskripple.config import FIXTURES_DIR
 from app.riskripple.schemas.models import ExposureEdge
 from app.riskripple.tools.regulatory_tools import retrieve_company_filings
 from app.riskripple.tools.research_tools import extract_candidate_entities
+
+# Confirmed by a real alert-scan run: broadening candidate extraction to catch single
+# words (needed to catch "titanium") also let through generic corporate/regulatory
+# boilerplate -- "Management", "Control", "Investment", "Regarding", "Rules" each
+# matched literally every one of 8 real filings spanning semiconductors, a utility,
+# consumer tech, banking, aerospace, and software, producing a 100% false-positive
+# alert rate. Fix: empirically test each candidate against the full available fixture
+# corpus (same confirmed-boilerplate methodology already used for "united states" in
+# research_tools.py, just applied dynamically instead of to a fixed 3-phrase
+# denylist) and drop any candidate that matches almost everything -- a word that is
+# "found" in every unrelated company's filing regardless of industry carries no
+# signal about this specific event or holding.
+_BOILERPLATE_MATCH_THRESHOLD = 0.75
+
+
+def _filter_boilerplate_candidates(candidates: dict[str, list[str]], fixtures_dir) -> dict[str, list[str]]:
+    import re as _re
+    from pathlib import Path as _Path
+
+    base = _Path(fixtures_dir) / "filings" if fixtures_dir else FIXTURES_DIR / "filings"
+    corpus_files = list(base.glob("*_10K.txt"))
+    if len(corpus_files) < 4:  # too small a corpus to judge "almost everything" meaningfully
+        return candidates
+    corpus_texts = [p.read_text(errors="ignore") for p in corpus_files]
+
+    kept: dict[str, list[str]] = {}
+    for candidate, aliases in candidates.items():
+        hit_count = sum(
+            1 for text in corpus_texts
+            if _re.search(rf"\b{_re.escape(candidate)}\b", text, _re.IGNORECASE)
+        )
+        if hit_count / len(corpus_texts) < _BOILERPLATE_MATCH_THRESHOLD:
+            kept[candidate] = aliases
+    return kept
 
 
 # Ticker symbols don't fuzzy-match company names well ("Nvidia" vs "NVDA" scores ~36),
@@ -85,6 +120,7 @@ def load_company_graph(
     if event_description:
         for candidate in extract_candidate_entities(event_description, max_candidates=15):
             candidate_aliases[candidate] = [candidate]
+        candidate_aliases = _filter_boilerplate_candidates(candidate_aliases, fixtures_dir)
 
     for symbol in portfolio_symbols:
         filing = retrieve_company_filings(symbol, fixtures_dir=fixtures_dir)

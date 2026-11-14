@@ -12,6 +12,8 @@ from dataclasses import asdict, is_dataclass
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app.riskripple.alerts.db import get_all_portfolios
+from app.riskripple.alerts.pipeline import run_alert_scan
 from app.riskripple.ingestion import macro_fred, regulatory_events, sanctions_gac, sanctions_ofac
 
 router = APIRouter(prefix="/riskripple", tags=["riskripple"])
@@ -185,3 +187,49 @@ def investigate(request: InvestigateRequest):
         "trace": trace,
         "error": None,
     }
+
+
+class AlertScanDocument(BaseModel):
+    document_number: str
+    title: str
+    abstract: str | None = None
+    publication_date: str | None = None
+    document_url: str | None = None
+
+
+class AlertScanRequest(BaseModel):
+    documents: list[AlertScanDocument] | None = None
+    search_term: str | None = None
+    per_page: int = 10
+
+
+@router.post("/alerts/scan")
+def alerts_scan(request: AlertScanRequest):
+    """Scan regulatory/sanctions documents against every real user's real portfolio
+    (from the app's own Postgres `portfolio_holdings` table) and return genuinely
+    relevant alerts with a constrained recommendation for each. If `documents` isn't
+    given, fetches live Federal Register documents (via `search_term`, or the
+    existing broad default net) instead of requiring a caller to supply them.
+    """
+    if request.documents:
+        documents = [d.model_dump() for d in request.documents]
+    else:
+        try:
+            if request.search_term:
+                result = regulatory_events.search_documents(term=request.search_term, per_page=request.per_page)
+            else:
+                result = regulatory_events.search_documents_multi(per_page=request.per_page)
+        except Exception as exc:
+            raise HTTPException(502, f"Federal Register fetch failed: {exc}") from exc
+        documents = _dataclass_list(result.documents)
+
+    try:
+        portfolios = get_all_portfolios()
+    except Exception as exc:
+        raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
+
+    if not portfolios:
+        return {"documents_scanned": len(documents), "portfolios_checked": 0, "alerts": []}
+
+    alerts = run_alert_scan(documents=documents, portfolios=portfolios)
+    return {"documents_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}

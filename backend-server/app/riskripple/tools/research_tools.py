@@ -46,27 +46,50 @@ _CANDIDATE_ENTITY_RE = re.compile(
     r"\b[A-Z][A-Za-z&.\-]*(?:\s+(?:[A-Z][A-Za-z&.\-]*|of|and|for|the|in|on))*\b"
 )
 
-# Single-word candidates: materials, technologies, commodities, and other common
-# nouns an event description names that the proper-noun regex above structurally
-# cannot catch (it only matches capitalized multi-word phrases). Confirmed by direct
-# test: feeding the regex-only extractor a real sanctions-event sentence mentioning
-# "titanium", "Russia", and "semiconductors" returned only
+# Single-word candidates: materials, technologies, and sanctions-relevant
+# geography/trade terms an event description names that the proper-noun regex above
+# structurally cannot catch (it only matches capitalized multi-word phrases).
+# Confirmed by direct test: feeding the regex-only extractor a real sanctions-event
+# sentence mentioning "titanium", "Russia", and "semiconductors" returned only
 # ['Following the Russia-Ukraine', 'United States and Canada'] -- it missed every
-# single-word term, including "Russia" itself (merged into a garbled leading phrase).
-# This list is intentionally broad (any token >= 4 chars, not a stopword, not a
-# generic connector/filler word) because every candidate it produces still requires a
-# literal word-boundary match in the actual filing text downstream
-# (extract_supplier_edges_from_filing_text) before it can produce any claim -- a noisy
-# candidate is simply rejected there, it cannot cause fabrication.
+# single-word term.
+#
+# An earlier version of this tried "any word >= 4 chars, minus a stopword list" --
+# confirmed BROKEN by a real end-to-end alert-scan run: common English words like
+# "Rules", "Management", "Control", "Entity", "sets", "announces", "Administration"
+# each coincidentally appear SOMEWHERE in any sufficiently long (~500KB) real filing
+# purely by chance, regardless of actual relevance, producing a 100% false-positive
+# alert rate across every portfolio tested. A frequency filter against the available
+# fixture corpus didn't fully fix it either (a word doesn't need to appear in most
+# filings to be a false positive from a single lucky hit). A stopword DENYLIST can
+# never keep up with the much larger space of generic English words that will
+# spuriously match -- so this uses a curated ALLOWLIST instead, same philosophy as
+# KNOWN_SUPPLIER_ALIASES: specific, extensible, honest about covering known
+# categories (materials/commodities, sanctions-relevant geography, trade/tech terms)
+# rather than claiming general entity recognition. A term outside this list still
+# gets a chance via the capitalized multi-word phrase path above, or via the agent's
+# own `search_filings_fulltext`/`search_sec_edgar_live` tool calls, which aren't
+# constrained to this list.
 _SINGLE_WORD_RE = re.compile(r"[A-Za-z][A-Za-z\-]{3,}")
-_SINGLE_WORD_STOPWORDS = frozenset({
-    "following", "including", "affecting", "sourced", "suppliers", "supplier",
-    "restrictions", "restriction", "trade", "such", "that", "this", "these",
-    "those", "with", "from", "into", "which", "while", "there", "their", "about",
-    "after", "before", "between", "during", "under", "over", "also", "more",
-    "most", "some", "other", "than", "then", "when", "where", "what", "would",
-    "could", "should", "will", "have", "been", "were", "being", "expanded",
-    "advanced", "strategic", "materials", "material", "technology",
+_SINGLE_WORD_ALLOWLIST = frozenset({
+    # Materials / commodities / strategic minerals
+    "titanium", "copper", "cobalt", "lithium", "nickel", "aluminum", "aluminium",
+    "steel", "uranium", "tungsten", "palladium", "platinum", "silicon", "gallium",
+    "germanium", "neodymium", "graphite", "magnesium", "rhodium", "silver", "gold",
+    "oil", "gas", "wheat", "grain",
+    # Technology / product categories frequently the subject of export controls
+    "semiconductor", "semiconductors", "chip", "chips", "wafer", "wafers",
+    "microchip", "microchips", "software", "hardware", "encryption", "satellite",
+    "satellites", "drone", "drones", "battery", "batteries",
+    # Sanctions / trade mechanism terms
+    "sanctions", "sanctioned", "embargo", "embargoes", "tariff", "tariffs",
+    "blacklist", "blacklisted",
+    # Countries/nationalities most commonly the subject of U.S./Canadian sanctions
+    # and export-control regimes (not an exhaustive geopolitical list -- a curated
+    # set matching this system's actual demo scenarios).
+    "russia", "russian", "ukraine", "ukrainian", "china", "chinese", "iran",
+    "iranian", "cuba", "cuban", "syria", "syrian", "venezuela", "venezuelan",
+    "belarus", "belarusian", "myanmar", "taiwan", "taiwanese", "korea", "korean",
 })
 
 
@@ -74,8 +97,7 @@ def _single_word_candidates(text: str, max_candidates: int) -> list[str]:
     seen: dict[str, None] = {}
     for raw_match in _SINGLE_WORD_RE.finditer(text):
         word = raw_match.group(0)
-        lower = word.lower()
-        if lower in _SINGLE_WORD_STOPWORDS:
+        if word.lower() not in _SINGLE_WORD_ALLOWLIST:
             continue
         # Keep the term as it actually appears (preserves case for proper nouns like
         # "Russia"; lowercase common nouns like "titanium" stay lowercase) -- the
