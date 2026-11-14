@@ -87,13 +87,15 @@ flowchart TD
 
 | Règle | Détail |
 |---|---|
-| Nombres analysés | Pourcentages, montants, ratios, cours. Les nombres en tableau (`rows`) comme dans le texte. |
-| Nombres ignorés | Références de sources (`[1]`), dates et heures, années, numéros de ligne, durées de période (« 5 ans », « 30 jours »), nombres écrits dans la question de l'utilisateur. |
-| Correspondance | Un nombre de la réponse correspond à un nombre de la source si leurs valeurs coïncident après arrondi à la précision affichée. `26,3 %` correspond à `26.32`, mais `26,4 %` non. Les séparateurs français et anglais sont acceptés (`1 255`, `1,255`, `1.255`). |
-| Unités | Un pourcentage s'apparie avec un pourcentage, un montant avec un montant de la même devise. `0,26` et `26 %` sont deux écritures du même nombre. |
-| Valeurs dérivées | Une différence ou une somme de deux valeurs de la source (par exemple « +3,2 points ») est tolérée pour deux opérandes. Au-delà, elle est signalée comme `non retrouvé`. |
-| Sources acceptées | Sorties d'outils de la question, puis données de référence transmises (`chart`, `previous_stock`, `previous_news`) et réponses précédentes du même fil. Le verdict nomme la source de chaque nombre retrouvé. |
-| Verdict | `validé` : tous les nombres retrouvés. `à réserve` : nombres non retrouvés mais plausibles (valeur dérivée). `rejeté` : nombre sans aucune source. |
+| Nombres analysés | Pourcentages, points, montants avec devise, ratios, cours, dans `title`, `explanation`, `headers` et `rows`. |
+| Nombres ignorés | Références de sources (`[1]`), dates et heures, années, numéros de liste, noms d'indices (`S&P 500`), durées de période (« 5 ans », « 30 jours », `1mo`), et le texte d'illustration qui suit « par exemple », « for example » ou « e.g. » jusqu'à la fin de la phrase. |
+| Correspondance | Un nombre de la réponse correspond à un nombre de la source si leurs valeurs coïncident à la précision affichée : `26,3 %` correspond à `26.32`, `26,4 %` non, `26 %` oui. Les formats français et anglais sont lus (`1 255`, `1,255`, `1.255`, `1 255,5`, `1,255.5`). Un format ambigu comme `1,255` est lu des deux façons. |
+| Signe | Un nombre écrit avec `+` ou `-` doit avoir le signe de la source. Sans signe, « baisse de 35,12 % » correspond à `-35.12`. |
+| Unités et devises | Un pourcentage ne s'apparie pas avec un montant. Un montant en `USD` ne s'apparie pas avec une valeur en `CAD`. Un taux de change n'est pas un montant. Un ratio (indice de Herfindahl) écrit en pourcentage est retrouvé (`0,42` devient `42 %`) et signalé `scaled`. Les multiplicateurs `million`, `milliard`, et `k` ou `M` collés à une devise sont lus. |
+| Sources acceptées | Sorties des outils de la question dont le statut n'est pas `failed`, la question de l'utilisateur, puis les données de référence transmises (`chart`, `previous_stock`, `previous_news`, échanges précédents). Le verdict nomme la source et le chemin de chaque nombre retrouvé. |
+| Valeurs dérivées | Trois cas seulement, tous signalés `à réserve` avec leurs opérandes : (1) un écart écrit **en points** entre deux pourcentages du même appel d'outil ; (2) la variation entre les valeurs `before` et `after` d'un même outil, si le nombre a au moins une décimale ; (3) un calcul simple sur les nombres de la question (somme, différence, produit, quotient, « x % de y »). Une différence entre deux pourcentages écrite sans décimale n'est pas acceptée : avec ~30 valeurs, elle tomberait sur un écart au hasard. |
+| Nombres faibles | Un entier sans unité ni séparateur (« 3 lignes ») et les valeurs structurelles (`0`, `100 %`, `1,00` comme maximum) donnent `à réserve` s'ils n'ont pas de source, jamais `rejeté`. |
+| Verdict | `validé` : tous les nombres retrouvés. `à réserve` : au moins une valeur dérivée ou un nombre faible sans source. `rejeté` : au moins un nombre fort sans source. `non évalué` : la réponse n'est pas une expression `FinanceAnswer` lisible. |
 
 ### Étage 2 : affirmations (phase D)
 
@@ -117,12 +119,26 @@ Réalisée le 14 novembre 2026.
 
 **Critère de sortie :** atteint. Une entrée par appel d'outil, y compris pour les outils en échec.
 
-### Phase B : étage déterministe ⬜
-- ⬜ `verification/numbers.py` : lecture de l'expression `FinanceAnswer` (arguments positionnels JSON), extraction des nombres avec leur unité, règles d'ignorance de la section 5.
-- ⬜ `verification/checks.py` : fonctions pures, sans réseau, qui comparent les nombres de la réponse au registre et renvoient un verdict par nombre.
-- ⬜ Tests dans `backend-server/tests/test_verification.py` (cas de la section 7).
+### Phase B : étage déterministe ✅
+Réalisée le 14 novembre 2026.
+- ✅ `verification/numbers.py` : lecture de l'expression `FinanceAnswer` (arguments JSON positionnels, guillemets et parenthèses dans les chaînes), extraction des nombres avec unité, signe, devise et tolérance, et parcours d'un JSON quelconque en gardant le chemin de chaque nombre.
+- ✅ `verification/checks.py` : `verify_answer(texte, enregistrements, question=..., references=...)` renvoie un `Report` (verdict et résultat par nombre, avec la source ou les opérandes). `Report.to_dict()` donne la forme JSON pour la phase C. Fonctions pures, sans réseau.
+- ✅ `backend-server/tests/test_verification.py` : 31 tests, qui couvrent les cas de la section 7. Les 44 tests du projet (13 de calcul, 31 de vérification) passent.
+- ✅ Essai sur des réponses réelles : les réponses du modèle Bedrock enregistrées par `backend-server/evals/eval_calc_agent.py` (18 questions, 3 passages chacun, soit 54 réponses, fichier `evals/last-run.json`, non suivi par git et écrit par un autre membre de l'équipe) ont été rejouées dans le vérificateur. Le fichier ne garde que les entrées des outils : j'ai relancé les mêmes outils sur les mêmes données synthétiques pour reconstituer leurs sorties.
+  - Les 54 réponses sont lisibles : aucune n'est `non évalué`.
+  - Conversion de devises, risque historique, transfert trop grand, poids non normalisés : `validé`, avec 5 à 24 nombres contrôlés. Transfert avec portefeuille enregistré : `validé` (1 passage) ou `à réserve` (2 passages, variations calculées par le modèle), avec 29 à 40 nombres contrôlés.
+  - Transferts : `à réserve`, à cause des variations calculées par le modèle (`−0,18` sur l'indice de Herfindahl, `−5 pts`).
+  - Détections réelles : dans `mine-concentration`, le modèle écrit des valeurs de marché de 1 000 USD qui ne figurent dans aucune sortie d'outil. Dans `concentration-3`, il cite des indices d'exemple (0,25, 0,33). Les deux sont `rejeté`.
+  - Trois faux rejets trouvés par cet essai et corrigés : taux de change lu comme un montant en devise, `1,00` comme maximum de l'indice, texte d'exemple (« par exemple : 40 % en AAPL »).
+- ⚠️ Limites connues de l'étage 1 :
+  - Un nombre inventé qui coïncide avec un nombre de la source est accepté (le contrôle vérifie la présence, pas le sens). L'unité, la devise et le signe réduisent ce risque.
+  - `$` seul n'indique pas la devise, donc aucun contrôle de devise pour lui.
+  - Les nombres cités depuis un article sont comparés à des chaînes de texte, sans garantie de sens.
+  - La mention « par exemple » masque le nombre qui suit : un modèle pourrait y cacher un chiffre. L'étage 2 relit ces phrases.
+  - Les rejeux ont été faits sur des données synthétiques, pas sur des cours réels.
+  - Aucun appel réel de Bedrock n'a été fait pour cette phase, et le vérificateur n'est pas encore branché au chat.
 
-**Critère de sortie :** les tests passent, et la fonction renvoie le même verdict sur la réponse réelle d'une question de transfert enregistrée en local.
+**Critère de sortie :** atteint. Les tests passent, et la fonction donne un verdict stable sur des réponses réelles de transfert (verdict `à réserve` à cause des variations calculées par le modèle). Elle est pure : mêmes entrées, même verdict.
 
 ### Phase C : intégration et affichage ⬜
 - ⬜ Dans `reply_events`, après la boucle d'outils, appeler le contrôle et émettre un pas d'activité `verify_answer` avec son statut (`completed`, `partial`, `failed`) et son verdict.
@@ -160,9 +176,15 @@ Réalisée le 14 novembre 2026.
 | Nombre arrondi (26,32 affiché 26,3 %) | Retrouvé |
 | Séparateurs français (`1 255`, `26,3 %`) | Retrouvés |
 | Référence `[1]`, date, « 5 ans » | Ignorés |
-| Nombre qui ne figure que dans la question de l'utilisateur | Ignoré |
+| Nombre qui ne figure que dans la question de l'utilisateur | Retrouvé, source : la question |
 | Nombre qui ne figure que dans `previous_stock` | Retrouvé, source nommée |
-| Différence entre deux valeurs de la source | `à réserve` (valeur dérivée) |
+| Écart en points entre deux pourcentages de la source, ou variation avant et après avec une décimale | `à réserve` (valeur dérivée, opérandes nommés) |
+| Même écart écrit en pourcentage entier, sans décimale | `rejeté` |
+| Calcul simple sur les nombres de la question (15 % de 2 000 $) | `à réserve` |
+| Texte d'exemple (« par exemple : 40 % en AAPL ») | Ignoré |
+| `0 %`, `100 %`, `1,00` sans source | `à réserve`, jamais `rejeté` |
+| Montant en USD alors que la source est en CAD | `rejeté` |
+| Gain écrit `+35,12 %` alors que la source vaut `-35.12` | `rejeté` |
 | Nombre de la réponse sans aucun outil appelé | `rejeté` |
 | Outil en statut `partial`, réponse qui ne le mentionne pas | Réserve de l'étage 2 |
 | Outil en échec, aucun chiffre dans la réponse | `validé`, sans nombre contrôlé |
