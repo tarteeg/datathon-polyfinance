@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -221,18 +222,76 @@ def search_filings_fulltext(
     return FullTextSearchResult(hits=hits, metadata=metadata)
 
 
+# A blind text[:max_chars] truncation keeps whatever happens to be first in the
+# document -- for a large filer (a bank's 10-K especially) that is often cover pages,
+# legal boilerplate, or (worse) the machine-generated XBRL tag dump that many filers'
+# primary HTML document embeds, not the narrative Risk Factors/Business/MD&A sections
+# this system actually needs. Confirmed directly: JPM's 10-K, truncated at 200k chars,
+# cut off mid-word inside raw XBRL tag soup (`...jpm:LongTermDebtVariableInterest...`),
+# nowhere near its real risk-factors prose -- making its "no established link" result
+# a tooling failure, not a finding. Standard 10-K items ("Item 1A. Risk Factors",
+# "Item 1. Business", "Item 7. Management's Discussion") are the actually-relevant
+# content, so locate and prioritize them before falling back to a prefix truncation.
+def _real_item_heading_matches(text: str, item_word: str) -> list[re.Match]:
+    """Find genuine "Item N" SECTION HEADINGS, filtering out the two kinds of false
+    positive a real 10-K's text is full of: a Table-of-Contents row (the item name
+    immediately followed by another "Item ..." row within a short span -- TOC rows
+    are packed tightly together) and an in-prose cross-reference like "Part I, Item
+    1A: Risk Factors on pages 9-31" (the item name immediately preceded by "Part I,"
+    / "Part 1,"). Confirmed necessary by direct inspection of JPM's real 10-K: of 6
+    raw "Item 1A" regex matches, only 1 (at the real section boundary, immediately
+    followed by actual prose: "Item 1A. Risk Factors.\\nThe following discussion sets
+    forth...") was the genuine heading; the rest were 1 TOC row and 4 narrative
+    cross-references.
+    """
+    pattern = re.compile(rf"item\s+{item_word}\b[.\-:—\s]", re.IGNORECASE)
+    real: list[re.Match] = []
+    for m in pattern.finditer(text):
+        before = text[max(0, m.start() - 20) : m.start()]
+        if re.search(r"part\s+(i|1)\s*,\s*$", before, re.IGNORECASE):
+            continue  # in-prose cross-reference ("Part I, Item 1A: ..." -- the comma
+            # distinguishes this from the legitimate "Part I\nItem 1. Business"
+            # standalone section-divider heading, which has no comma.
+        after = text[m.end() : m.end() + 250]
+        if re.search(r"item\s+\d", after, re.IGNORECASE):
+            continue  # another item heading immediately follows -- a TOC row
+        real.append(m)
+    return real
+
+
+def _extract_priority_sections(text: str) -> str | None:
+    """Return the text spanning from the real "Item 1" heading through the end of
+    the real "Item 7A"/"Item 7" section (Business through MD&A -- the standard 10-K
+    narrative items), or None if no recognizable item structure was found.
+    """
+    starts = _real_item_heading_matches(text, "1")
+    if not starts:
+        return None
+    start = starts[0].start()
+    item8_matches = _real_item_heading_matches(text[start:], "8")
+    end = start + item8_matches[0].start() if item8_matches else len(text)
+    if end - start < 500:  # too small to be a real section span -- treat as not found
+        return None
+    return text[start:end]
+
+
 def fetch_filing_text(
     cik: str,
     filing: FilingSummary,
     *,
     client: httpx.Client | None = None,
-    max_chars: int = 200_000,
+    max_chars: int = 500_000,
 ) -> tuple[str, SourceMetadata]:
     """Fetch a filing's primary document and strip it to plain text.
 
-    `max_chars` caps the returned text (10-Ks can be megabytes); callers needing the
-    full document should fetch and chunk it themselves via the RAG ingestion pipeline
-    instead of this convenience function.
+    Prioritizes the narrative Item 1/1A/7/7A sections (Business, Risk Factors,
+    MD&A) when they're findable, since those are what this system's evidence search
+    actually needs -- a blind prefix truncation on a large filing can cut off before
+    reaching them entirely (see `_extract_priority_sections`). Falls back to a
+    straight prefix truncation at `max_chars` (raised from the previous 200_000,
+    which was too small for many large filers) if no recognizable item structure is
+    found. Callers needing the full, unbounded document should fetch and chunk it
+    themselves via the RAG ingestion pipeline instead of this convenience function.
     """
     cik_no_padding = cik.strip().lstrip("0")
     accession_no_dashes = filing.accession_number.replace("-", "")
@@ -253,7 +312,17 @@ def fetch_filing_text(
 
     raw = resp.content
     soup = BeautifulSoup(raw, "lxml")
-    text = soup.get_text(separator="\n", strip=True)[:max_chars]
+    full_text = soup.get_text(separator="\n", strip=True)
+
+    priority = _extract_priority_sections(full_text)
+    if priority is not None:
+        # Keep the priority (narrative) section first, then fill any remaining
+        # budget with the start of the document (cover page / intro), so a caller
+        # searching linearly still sees the most relevant content within budget.
+        remaining = max_chars - len(priority)
+        text = priority[:max_chars] if remaining <= 0 else priority + "\n\n" + full_text[:remaining]
+    else:
+        text = full_text[:max_chars]
 
     metadata = SourceMetadata(
         source_name=f"SEC EDGAR filing {filing.form_type} ({filing.accession_number})",
