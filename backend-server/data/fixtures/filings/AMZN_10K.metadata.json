@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001018724-26-000004)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000004/amzn-20251231.htm",
+  "retrieved_at": "2026-11-14T21:00:54.015457Z",
+  "observation_date": null,
+  "publication_date": "2026-02-06",
+  "currency": null,
+  "data_version": "080635a46f1d2ca6",
+  "content_hash": "080635a46f1d2ca6b73ed0b43cb2f6667bfb0bcb4d7c94a823959767200f6f74",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Retail-Catalog & Mail-Order Houses",
+  "company_name": "AMAZON COM INC",
+  "fetched_live": true
+}

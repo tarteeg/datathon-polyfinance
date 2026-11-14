@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0000320193-26-000026)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000026/aapl-20260926.htm",
+  "retrieved_at": "2026-11-14T21:59:42.527764Z",
+  "observation_date": null,
+  "publication_date": "2026-11-03",
+  "currency": null,
+  "data_version": "076ee2d3dd912981",
+  "content_hash": "076ee2d3dd912981b39063cf586b40f0a8a7abf399ba60bd7993fa422262da6e",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Electronic Computers",
+  "company_name": "Apple Inc.",
+  "fetched_live": true
+}
