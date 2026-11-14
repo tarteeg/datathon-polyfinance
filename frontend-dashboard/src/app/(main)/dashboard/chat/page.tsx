@@ -1,35 +1,12 @@
-import Link from "next/link";
-
-import { ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 
-import { Button } from "@/components/ui/button";
+import { FinanceChat } from "./_components/finance-chat";
+import { requireSession } from "@/lib/session";
 
-export const metadata: Metadata = {
-  robots: {
-    index: false,
-    follow: true,
-  },
-};
+export const metadata: Metadata = { title: "Finance chat", robots: { index: false, follow: false } };
 
-export default function Page() {
-  return (
-    <div className="flex h-full flex-col gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <h1 className="text-sm leading-none font-medium">Chat preview</h1>
-          <p className="text-muted-foreground text-sm">
-            This iframe shows the standalone chat screen. Open it in full screen for a better view.
-          </p>
-        </div>
-        <Button asChild variant="ghost" size="icon-sm">
-          <Link href="/chat" prefetch={false} target="_blank" rel="noreferrer" aria-label="Open chat in new tab">
-            <ExternalLink />
-          </Link>
-        </Button>
-      </div>
-
-      <iframe src="/chat" title="Chat preview" className="bg-background min-h-0 flex-1 rounded-lg border" />
-    </div>
-  );
+export default async function Page({ searchParams }: { searchParams: Promise<{ thread?: string }> }) {
+  const { user } = await requireSession();
+  const { thread } = await searchParams;
+  return <FinanceChat key={`${user.id}-${thread ?? "latest"}`} requestedThread={thread} />;
 }

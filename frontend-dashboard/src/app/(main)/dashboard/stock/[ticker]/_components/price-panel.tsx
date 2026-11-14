@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 export const periodLabels: Record<string, string> = {
   "1d": "Today",
   "5d": "Past 5 days",
+  mtd: "Month to date",
   "1mo": "Past month",
   "3mo": "Past 3 months",
   "6mo": "Past 6 months",

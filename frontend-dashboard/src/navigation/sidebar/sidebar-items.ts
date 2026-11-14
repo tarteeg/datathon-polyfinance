@@ -62,7 +62,10 @@ export interface NavGroup {
 export const sidebarItems: NavGroup[] = [
   {
     id: 3,
-    items: [{ id: "home", title: "Home", url: "/dashboard/home", icon: House }],
+    items: [
+      { id: "home", title: "Home", url: "/dashboard/home", icon: House },
+      { id: "chat", title: "Finance chat", url: "/dashboard/chat", icon: MessageSquare },
+    ],
   },
   {
     id: 0,
@@ -162,12 +165,6 @@ export const sidebarItems: NavGroup[] = [
         title: "Email",
         url: "/dashboard/mail",
         icon: Mail,
-      },
-      {
-        id: "chat",
-        title: "Chat",
-        url: "/dashboard/chat",
-        icon: MessageSquare,
       },
       {
         id: "calendar",

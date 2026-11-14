@@ -35,7 +35,7 @@ Candle times and the quote's `regularMarketTime` are Unix seconds.
 | Period | Candle interval |
 | --- | --- |
 | `1d` (default), `5d` | 1 minute |
-| `1mo`, `3mo`, `6mo`, `ytd`, `1y` | 1 hour |
+| `mtd`, `1mo`, `3mo`, `6mo`, `ytd`, `1y` | 1 hour |
 | `3y`, `5y` | 1 day |
 
 ## Layout
@@ -64,3 +64,35 @@ Upstream failures return HTTP 502.
 companies ranked by distinct article URLs collected over the past 24 hours.
 Omit `sector` for all sectors. The response includes the available company
 sectors and the ranking’s UTC cutoff time.
+
+## Finance chat
+
+`POST /chat` accepts the current question and up to ten previous exchanges from the signed-in dashboard. For stock-chart conversations the dashboard also supplies the saved chart figures in `chart`. FastAPI calls Bedrock Converse and returns an `answer`. Interactive chat uses `POST /chat/stream` with the same request body. It sends newline-delimited JSON text deltas followed by a completion record containing the source snapshots. The dashboard saves each completed exchange to Aurora.
+
+Set `AWS_REGION` and `BEDROCK_MODEL_ID` in the backend environment to the region and model or inference profile you can invoke. Configure backend AWS credentials with `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` access or set a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Generate a shared key with `openssl rand -hex 32` and set `CHAT_API_KEY` to that value in both apps’ server environments. The dashboard supplies it in the `X-Chat-Key` header.
+
+When the dashboard supplies session-scoped holdings, Bedrock can request quantities, valuation or coverage of saved tickers through `get_my_portfolio`. Quotes are grouped by currency and stocks without a quantity are tracked separately. Run `npm run chat:migrate` in the dashboard to enable saved portfolio breakdowns.
+
+For news questions, Bedrock can request multiple read-only StocksFeed searches per message. The response includes the numbered source list and a news snapshot. The dashboard can send that snapshot as `previous_news` when continuing a thread.
+
+## Calculation tools
+
+`app/modules/analysis/` adds six read-only tools to the finance chat. Bedrock chooses them; every figure comes from the pure functions in `calculations.py`.
+
+| Tool | What it computes |
+| --- | --- |
+| `simulate_transfer` | Weights, sector exposure and concentration before and after moving a share of the whole portfolio from one holding to another |
+| `sector_exposure` | Sector weights, with the unclassified share |
+| `concentration` | Largest line, top-3 weight, Herfindahl index, effective number of lines |
+| `risk_history` | Total and annualized return, annualized volatility, maximum drawdown with dates, per symbol and for a constant-weight portfolio |
+| `check_data` | Whether price histories share dates and currency |
+| `convert_currency` | Amounts converted with the latest Bank of Canada daily rate |
+
+The user's own portfolio (`portfolio=mine`) is valued in CAD with the Bank of Canada rate. Sector shares come from Yahoo Finance; `risk_history` uses daily closes adjusted for splits and dividends. The tools need outbound HTTPS access to Yahoo Finance and `www.bankofcanada.ca`, and no new environment variable.
+
+Run the calculation tests from this directory:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest tests
+```
