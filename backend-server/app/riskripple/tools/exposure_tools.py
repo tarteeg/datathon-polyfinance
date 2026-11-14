@@ -15,7 +15,7 @@ from app.riskripple.graph.company_graph import (
 )
 from app.riskripple.config import FIXTURES_DIR
 from app.riskripple.schemas.models import ExposureEdge
-from app.riskripple.tools.regulatory_tools import retrieve_company_filings
+from app.riskripple.tools.regulatory_tools import retrieve_company_filings, summarize_event_evidence
 from app.riskripple.tools.research_tools import extract_candidate_entities
 
 # Confirmed by a real alert-scan run: broadening candidate extraction to catch single
@@ -228,10 +228,58 @@ def calculate_exposure_weights(
     return {"exposure": exposure}
 
 
+@tool
+def hybrid_search_evidence(query: str, filing_symbol: str, fixtures_dir: str | None = None) -> dict:
+    """Search ONE company's real 10-K for evidence of a free-form query (any
+    material, technology, event, or entity the agent itself is asking about --
+    not limited to a hardcoded industry/country/material list), combining two
+    independent evidence sources:
+
+    1. `literal_matches` -- exact, word-boundary textual matches (via the same
+       mechanism as the exposure graph's candidate-entity check). This is the
+       STRONGER evidence: a literal match means the company's own filing names
+       the exact term.
+    2. `semantic_evidence` -- embedding-based retrieval (the real Bedrock
+       Knowledge Base when configured/available, else the local TF-IDF
+       fallback), for RECALL when the query is paraphrased or no literal term
+       match exists (e.g. a filing discusses "burning coal to generate
+       electricity" without using the query's exact wording).
+
+    Always prefer `literal_matches` when both are present -- they are a
+    stronger, more specific claim than a semantic passage, which may be merely
+    topically related rather than a direct confirmation. Returns `found: False`
+    only if NEITHER source turned up anything, which should be reported as a
+    genuine absence of evidence, not treated as equivalent to a verified link.
+    """
+    graph_json = load_company_graph([filing_symbol], fixtures_dir=fixtures_dir, event_description=query)
+    symbol_upper = filing_symbol.upper()
+    literal_edges = [e for e in graph_json.get("edges", []) if e.get("source") == symbol_upper]
+    literal_matches = [
+        {
+            "matched_entity": e.get("target"),
+            "evidence_source": e.get("evidence_source"),
+            "confidence": e.get("confidence"),
+        }
+        for e in literal_edges
+    ]
+
+    semantic = summarize_event_evidence(event_title=query, filing_symbol=filing_symbol, fixtures_dir=fixtures_dir)
+
+    return {
+        "found": bool(literal_matches) or semantic.get("found", False),
+        "literal_matches": literal_matches,
+        "semantic_evidence": semantic.get("evidence_context", ""),
+        "semantic_retriever_used": semantic.get("retriever_used"),
+        "industry": graph_json.get("industries", {}).get(symbol_upper),
+        "no_filing_evidence": symbol_upper in (graph_json.get("symbols_without_filing_evidence") or []),
+    }
+
+
 ALL_EXPOSURE_TOOLS = [
     resolve_company_identity,
     load_company_graph,
     find_direct_exposure_tool,
     traverse_relationships_tool,
     calculate_exposure_weights,
+    hybrid_search_evidence,
 ]
