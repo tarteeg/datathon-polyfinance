@@ -1,0 +1,13 @@
+# Local authentication secrets
+.env*
+!.env.example
+
+# The repository-wide Python ignore rules also match directories named lib.
+!src/lib/
+!src/lib/**
+
+# Installed dependencies and generated Next.js files
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
