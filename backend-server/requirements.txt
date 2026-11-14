@@ -3,3 +3,18 @@ uvicorn==0.54.0
 yfinance==1.8.0
 requests==2.34.2
 python-dotenv>=1,<2
+
+# riskripple trickle-down investigation agent
+pandas
+numpy
+scipy
+pydantic>=2
+networkx
+rapidfuzz
+boto3
+strands-agents
+strands-agents-tools
+httpx
+beautifulsoup4
+lxml
+tiktoken
