@@ -31,8 +31,64 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 # the filings/ prefix in S3 instead of a fixed tuple.
 _ALL_FIXTURE_FILING_SYMBOLS = ("NVDA", "AMD", "INTC")
 
-_CONNECTOR_WORDS = {"of", "and", "for", "the", "in", "on", "a", "an"}
+_CONNECTOR_WORDS = {"of", "and", "for", "the", "in", "on", "a", "an", "to"}
 _LEADING_NOISE_WORDS = {"Ltd", "And", "Or", "The", "This", "These", "It", "We", "Our"}
+
+# Confirmed by a real live alert-scan run against the full Federal Register default
+# document set (not just a small sample): the capitalized-multi-word-phrase regex
+# below produces phrases like "Federal Register", "Executive Order", "Entity List",
+# "Performance Standards", and "Unified Agenda" -- these are capitalized multi-word
+# phrases, so they pass every existing filter, but they describe the REGULATORY
+# PROCESS ITSELF (how a rule gets published/ordered/listed/measured/scheduled), not
+# any specific material, technology, company, or geography. "Federal Register" in
+# particular appears in nearly every regulatory document (it's the publication's own
+# name) and in generic compliance boilerplate in nearly every 10-K, so it produced a
+# real false-positive alert pairing a Horse Protection Act rule with NVDA, and a
+# generic annual rulemaking index ("Unified Agenda") with both AAPL and NVDA.
+#
+# A per-document corpus-frequency filter (exposure_tools._filter_boilerplate_candidates)
+# doesn't catch this reliably: with a small fixture corpus, a generic procedural
+# phrase doesn't need to hit 75% of filings to be meaningless -- it only needs to hit
+# ONE unrelated filing's boilerplate once to produce a false alert. This is a semantic
+# property of the phrase itself (it's about rulemaking machinery, not substance), not
+# a frequency property, so it's filtered here unconditionally rather than relying on
+# which fixtures happen to be in the corpus at query time.
+#
+# Rule: if EVERY significant (non-connector) word in a multi-word candidate is drawn
+# from this administrative/procedural vocabulary, the candidate is dropped regardless
+# of corpus frequency. A phrase with at least one word outside this set (a real
+# material, country, company, or named act like "Uyghur Forced Labor Prevention Act")
+# survives even if it also contains generic words like "Act".
+_GENERIC_PROCEDURAL_WORDS = {
+    # NOTE: "entity"/"list" are deliberately excluded even though "Entity List"
+    # looks like the same class of phrase as "Federal Register" -- it isn't. The
+    # U.S. Commerce Department's "Entity List" is a real, specific export-control
+    # mechanism that semiconductor companies substantively disclose real exposure
+    # to (confirmed: AMD's actual 10-K describes its THATIC joint venture being
+    # directly added to it; NVDA's actual 10-K discusses export licensing exposure
+    # tied to the U.S. Entity List). Denylisting "entity"/"list" caused a real
+    # regression -- it silently dropped that genuine match. "Federal Register" and
+    # "Executive Order", by contrast, only ever describe the publishing/ordering
+    # mechanism of a rule, never a specific list, company, or restriction with its
+    # own substantive consequences -- that's the actual distinguishing property,
+    # not "sounds bureaucratic."
+    "federal", "register", "executive", "order", "orders",
+    "performance", "standards", "standard", "unified", "agenda",
+    "regulatory", "deregulatory", "flexibility", "act", "acts", "rule", "rules",
+    "notice", "notices", "regarding", "final", "interim", "proposed", "advance",
+    "comment", "comments", "administration", "administrative", "department",
+    "office", "bureau", "commission", "agency", "agencies", "program", "programs",
+    "access", "support", "supporting", "restoring", "introduction", "title",
+    "chapter", "section", "part", "subpart", "docket", "procedure", "procedures",
+    "guidance", "framework", "initiative", "action", "actions", "plan", "plans",
+    "review", "update", "updates", "request", "requirements", "requirement",
+    "information", "collection", "extension", "amendment", "amendments",
+}
+
+
+def _is_generic_procedural_phrase(candidate: str) -> bool:
+    tokens = [t.lower() for t in candidate.split() if t.lower() not in _CONNECTOR_WORDS]
+    return bool(tokens) and all(t in _GENERIC_PROCEDURAL_WORDS for t in tokens)
 # Maximally-common phrases with no differentiating signal: every U.S. regulatory
 # document and every U.S. company's 10-K says "United States" constantly, including in
 # machine-generated XBRL boilerplate -- a literal match on this tells an investigation
@@ -165,6 +221,8 @@ def extract_candidate_entities(text: str, max_candidates: int = 10) -> list[str]
             continue
         non_connector_tokens = [t for t in tokens if t.lower() not in _CONNECTOR_WORDS]
         if len(non_connector_tokens) < 2:
+            continue
+        if _is_generic_procedural_phrase(candidate):
             continue
         seen.setdefault(candidate, None)
 
