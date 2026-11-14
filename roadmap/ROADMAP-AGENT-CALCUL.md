@@ -125,28 +125,34 @@ Pour éviter d'épuiser les 8 tours de la boucle, `simulate_transfer` renvoie au
 - ⬜ **Coordination avec Ben** : les nouveaux outils s'enregistrent dans `routes.py`, son fichier. Garder le code de calcul dans `app/modules/analysis/` et limiter les changements de `routes.py` à quelques lignes.
 - ⬜ Scénario de référence : symboles du fonds réduit et du fonds ajouté, pourcentage, période d'historique, devise (CAD). Les outils sont génériques et fonctionnent pour tout symbole.
 
-### Phase B : données ⬜
-- ⬜ Fonction de prix journaliers ajustés, à côté de `fetch_history` sans la modifier.
-- ⬜ Lecture des pondérations sectorielles (FNB) et du secteur (actions), avec un cache en mémoire.
-- ⬜ Lecture des taux de la Banque du Canada, avec un cache en mémoire.
+### Phase B : données ✅
+Réalisé le 14 novembre 2026, dans `backend-server/app/modules/analysis/data.py`.
+- ✅ Prix journaliers ajustés (`adjusted_closes`), à côté de `fetch_history`, qui n'est pas modifiée.
+- ✅ Pondérations sectorielles des FNB et secteur des actions (`sector_profile`), avec des noms de secteur normalisés.
+- ✅ Taux de la Banque du Canada (`cad_rates`), dernier taux disponible sur 14 jours.
+- ✅ Cache en mémoire de 15 minutes pour les trois sources.
 
-### Phase C : calculs et tests ⬜
-- ⬜ Les six outils de la section 5, en fonctions pures.
-- ⬜ Les cas de test de la section 5.
+### Phase C : calculs et tests ✅
+- ✅ Calculs purs dans `calculations.py` (sans réseau), outils dans `tools.py`.
+- ✅ 13 tests dans `backend-server/tests/test_analysis_calculations.py`, dont les cas 26 % et 23 % des organisateurs, le profil manquant, le transfert trop grand, la baisse maximale et sa récupération, et le contrôle des séries. Tous passent (`python -m pytest tests`). `pytest` est dans `requirements-dev.txt`, pas dans l'image.
+- ✅ Essai avec de vraies données : portefeuille hypothétique 60 % XIU.TO et 40 % VFV.TO, transfert de 10 % vers QQQ. La technologie passe de 21,52 % à 26,32 %, l'indice de Herfindahl de 0,52 à 0,42. Sur 5 ans, QQQ : volatilité 23,63 %, baisse maximale −35,12 % ; XIU.TO : 13,16 % et −16,36 %.
 
-**Critère de sortie :** les cas de test passent, en local.
+**Critère de sortie :** atteint.
 
-### Phase D : intégration dans la boucle du chat ⬜
-- ⬜ Enregistrer les outils dans la liste `available` de `reply_events` et leur exécution dans la boucle, avec les mêmes statuts (`completed`, `partial`, `failed`).
-- ⬜ Exécuter `check_data` dans le code avant `risk_history`, sans attendre que le modèle le demande.
-- ⬜ Ajouter quelques phrases courtes à la consigne système : quand utiliser les outils de calcul, chiffres seulement issus des outils, rappel de simulation. Vérifier que les questions habituelles du chat (cours, comparaison, actualités) répondent toujours bien.
-- ⬜ Ajouter les entrées des nouveaux outils au filtre de `step["input"]`, pour qu'elles apparaissent dans le déroulé.
-- ⬜ Libellés des nouveaux outils dans `activity-timeline.tsx`.
+### Phase D : intégration dans la boucle du chat ✅
+- ✅ Outils enregistrés dans `reply_events` (`routes.py`) : un import, l'ajout à la liste `available`, une branche d'exécution, avec les mêmes statuts (`completed`, `partial`, `failed`).
+- ✅ Le contrôle des séries est imposé par le code : `risk_history` l'exécute toujours et joint son résultat. `check_data` reste disponible seul.
+- ✅ Consigne système : quelques phrases sur l'usage des outils de calcul, les chiffres repris tels quels avec leurs hypothèses et sources, et le rappel de simulation.
+- ✅ Entrées des nouveaux outils ajoutées au déroulé, libellés ajoutés dans `activity-timeline.tsx`.
+- ✅ Limite de jetons de la réponse portée de 800 à 2 000 dans `routes.py` : les réponses avec tableaux avant et après étaient coupées et rejetées (« The assistant could not finish the reply »).
+- ✅ Vérifié en local avec Bedrock : la question de transfert déclenche `simulate_transfer` et `risk_history`, et la réponse reprend exactement leurs chiffres, avec l'avertissement sur les devises. Une question habituelle (cours de MSFT) répond toujours.
+- ⚠️ Non vérifié : l'écran du chat dans le navigateur (seul le backend a été testé), et le lint du frontend (`npm run check`).
+- ⚠️ Constaté dans le code de Ben : `position_value` remplace le point par un tiret, ce qui casse les symboles canadiens (`SHOP.TO` devient `SHOP-TO`). Sans effet sur le site, dont les portefeuilles ne contiennent que des titres du S&P 500. Les outils de calcul n'ont pas ce problème.
 
-**Critère de sortie :** une question sur un transfert, posée dans le chat en local, déclenche les outils de calcul et renvoie une réponse qui cite leurs chiffres.
+**Critère de sortie :** atteint côté backend.
 
 ### Phase E : déploiement ⬜
-- ⬜ Mettre à jour `ARCHITECTURE.md` et le README du backend (obligation de `AGENTS.md`).
+- ✅ `ARCHITECTURE.md` et le README du backend mis à jour (obligation de `AGENTS.md`).
 - ⬜ Récupérer `main` avant la pull request (Ben y fusionne régulièrement).
 - ⬜ Pull request de `agent-calcul` vers `main`. Le merge déclenche le déploiement automatique (10 à 15 minutes, canary).
 - ⬜ Aucune nouvelle variable ni nouveau droit IAM : mêmes modèle et clé. Le backend doit pouvoir joindre `www.bankofcanada.ca` depuis ECS (sous-réseaux publics, comme pour Yahoo Finance).

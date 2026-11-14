@@ -16,6 +16,7 @@ from app.modules.chat.discovery import COMPARE_TOOL, DISCOVER_TOOL, CompanyDisco
 from app.modules.chat.stock import STOCK_TOOL, StockQuery, lookup_stock, stock_source
 from app.modules.chat.portfolio import PORTFOLIO_TOOL, Holding, PortfolioQuery, portfolio_snapshot
 from app.modules.chat.news import NEWS_TOOL, NewsQuery, search_news, source_list
+from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANALYSIS_TOOLS, run_analysis_tool
 
 router = APIRouter()
 
@@ -93,6 +94,13 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         "are unavailable. For valuation use a short takeaway and empty table arguments: the app renders the "
         "verified holdings breakdown. Explain any missing prices, currencies or previous closes. "
         "For portfolio news use only get_my_portfolio with view news. For other current news use search_news. "
+        "For a simulated move of part of a portfolio to another fund or stock call simulate_transfer; for sector "
+        "weights call sector_exposure; for concentration call concentration; for historical returns, volatility or "
+        "drawdowns call risk_history; to convert currencies call convert_currency. Use portfolio=mine for the "
+        "user's saved positions and hypothetical only for an example portfolio the user describes with weights. "
+        "Report calculation figures exactly as returned, with their period, currency, assumptions and sources, and "
+        "state any data check issue, excluded position or unclassified share. Past risk figures do not predict "
+        "future results, and a simulation is not a recommendation. "
         "For follow-ups about previously cited stories, use the saved sources in their original numbered order. "
         "Ask for a ticker when a specific company is implied but unknown. Never invent coverage. "
         "Use numbered source references such as [1] for factual claims, matching the supplied order; the app adds original links. When the search returns no stories, report the coverage gap for the requested window. "
@@ -116,9 +124,10 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
     searches = []
     rankings = []
     portfolio = None
-    args = dict(modelId=model, messages=messages, system=system, inferenceConfig={"maxTokens": 800})
+    # Calculation answers carry before/after tables; 800 tokens cut them off mid-table.
+    args = dict(modelId=model, messages=messages, system=system, inferenceConfig={"maxTokens": 2000})
     try:
-        available = [*NEWS_TOOL["tools"], STOCK_TOOL, COMPARE_TOOL, DISCOVER_TOOL]
+        available = [*NEWS_TOOL["tools"], STOCK_TOOL, COMPARE_TOOL, DISCOVER_TOOL, *ANALYSIS_TOOLS]
         if request.holdings is not None:
             available.append(PORTFOLIO_TOOL)
         tools = {"toolConfig": {"tools": available}}
@@ -131,7 +140,8 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
             for call in calls:
                 step = {"id": call["toolUseId"], "tool": call["name"],
                         "input": {k: v for k, v in call["input"].items() if k in {
-                            "ticker", "tickers", "period", "sector", "comparison_period", "hours", "view", "limit", "topic", "show_chart"
+                            "ticker", "tickers", "period", "sector", "comparison_period", "hours", "view", "limit", "topic", "show_chart",
+                            *ACTIVITY_INPUTS,
                         }}}
                 if streaming:
                     yield {"activity": {**step, "status": "running"}}
@@ -188,6 +198,9 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                     except (ValueError, StocksFeedError):
                         status = "failed"
                         evidence.append({"news lookup unavailable": call["input"]})
+                elif call["name"] in ANALYSIS_TOOL_NAMES:
+                    calculation, status = run_analysis_tool(call["name"], call["input"], request.holdings)
+                    evidence.append({"AlphaForge calculation": calculation})
                 else:
                     status = "failed"
                     evidence.append({"unavailable": call["input"], "reason": "Tool unavailable."})
