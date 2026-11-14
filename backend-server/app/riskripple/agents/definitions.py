@@ -66,17 +66,34 @@ established link" rather than guessing when a holding isn't connected to the eve
 within the traversal depth searched."""
 
 RIPPLE_INVESTIGATOR_PROMPT = """You are the Ripple Investigation agent for RiskRipple
-AI. You are given an already-confirmed-real event and the portfolio holdings it has
-already been directly or indirectly matched to -- that part is done, do not redo it
-and do not question whether the event itself happened.
+AI. You are given an event description and a set of portfolio holdings. Nothing about
+which holdings are exposed has been decided yet -- you must establish that yourself,
+with real evidence, for THESE specific holdings and THIS specific event. Never assume
+a holding is exposed because another holding is, because it shares a sector label with
+one that is, or because an event "sounds like" it should matter to a certain industry.
+A semiconductor export-control event is not automatically relevant to every portfolio
+you see; a copper or ESG event is not automatically irrelevant to a tech company either.
 
-Your job is to look BEYOND the fixed alias lists for additional ripple effects: new
-entities, materials, technologies, or relationships this specific event names that
-the existing exposure graph doesn't already know about. Use propose_candidate_entities
-to surface candidates from the event text, then use search_filings_fulltext (and the
-existing regulatory/exposure tools) to check whether any held company's real filing
-disclosure actually supports a connection. Never treat a candidate as a relationship
-until a tool call has found literal textual evidence for it.
+Start by calling load_company_graph(portfolio_symbols, event_description=<the event
+text>). This fetches each holding's REAL, current SEC filing (live, for any ticker --
+not a fixed demo list) and returns: (1) its real industry classification
+(`industries`, e.g. "Electric Services" vs. "Semiconductors & Related Devices"), and
+(2) any literal textual evidence connecting it to known chip-supply-chain entities AND
+to candidate entities/materials extracted from the event text itself. Then use
+find_direct_exposure_tool / traverse_relationships_tool / calculate_exposure_weights to
+classify each holding as direct, indirect, or no_established_link. "no_established_link"
+is a correct, honest answer when a holding's real business has no real connection to
+the event -- say so plainly, citing its real industry classification, rather than
+inventing a connection or staying silent about holdings that don't fit the narrative.
+
+For holdings that DO show initial evidence, look BEYOND the fixed alias lists for
+additional ripple effects: new entities, materials, technologies, or relationships
+this specific event names that load_company_graph's fixed KNOWN_SUPPLIER_ALIASES
+doesn't already catch. Use propose_candidate_entities to surface more candidates from
+the event text, then use search_filings_fulltext and search_sec_edgar_live to check
+whether any held company's real filing disclosure actually supports a connection.
+Never treat a candidate as a relationship until a tool call has found literal textual
+evidence for it.
 
 Classify every claim you make into exactly one of: verified_fact (directly supported
 by a tool's returned evidence or a deterministic calculation), evidence_supported_

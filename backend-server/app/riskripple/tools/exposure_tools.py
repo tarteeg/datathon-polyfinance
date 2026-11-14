@@ -15,6 +15,7 @@ from app.riskripple.graph.company_graph import (
 )
 from app.riskripple.schemas.models import ExposureEdge
 from app.riskripple.tools.regulatory_tools import retrieve_company_filings
+from app.riskripple.tools.research_tools import extract_candidate_entities
 
 
 # Ticker symbols don't fuzzy-match company names well ("Nvidia" vs "NVDA" scores ~36),
@@ -51,15 +52,50 @@ def resolve_company_identity(name_or_symbol: str, known_symbols: list[str]) -> d
 
 
 @tool
-def load_company_graph(portfolio_symbols: list[str], fixtures_dir: str | None = None) -> dict:
-    """Build the verified supplier relationship graph for a set of portfolio holdings
-    by scanning each company's 10-K text for literal mentions of known suppliers."""
+def load_company_graph(
+    portfolio_symbols: list[str], fixtures_dir: str | None = None, event_description: str | None = None
+) -> dict:
+    """Build the verified exposure graph for a set of portfolio holdings, grounded in
+    each holding's REAL, current 10-K (live-fetched for any ticker, not just a fixed
+    demo set) -- never assume a holding is exposed to an event just because it shares
+    a sector label with one that is.
+
+    Two sources of edges, both requiring a literal textual match with its exact
+    evidence sentence (never inferred from industry similarity alone):
+    1. `KNOWN_SUPPLIER_ALIASES` -- the small curated chip-supply-chain seed list, still
+       useful when a holding genuinely is a semiconductor company.
+    2. If `event_description` is given, candidate entities/materials/technologies are
+       extracted from that text (the same heuristic as `propose_candidate_entities`)
+       and checked against each holding's own filing the same way -- so a
+       utility's real exposure to a grid-materials event, or a software company's
+       real exposure to a GPU-supply event, can be found on its own terms instead of
+       only ever rediscovering chip-supplier relationships regardless of what the
+       event or the portfolio actually are.
+
+    Also returns each holding's real SEC industry classification (`industries`,
+    keyed by symbol, e.g. "Electric Services" vs. "Semiconductors & Related Devices")
+    so a holding with no established link can be explained ("this is a utility, not
+    plausibly connected to a chip export event") instead of silently omitted.
+    """
     edges: list[ExposureEdge] = []
+    industries: dict[str, str | None] = {}
+    not_found: list[str] = []
+
+    candidate_aliases: dict[str, list[str]] = {}
+    if event_description:
+        for candidate in extract_candidate_entities(event_description, max_candidates=15):
+            candidate_aliases[candidate] = [candidate]
+
     for symbol in portfolio_symbols:
         filing = retrieve_company_filings(symbol, fixtures_dir=fixtures_dir)
         if not filing["found"]:
+            not_found.append(symbol)
+            industries[symbol] = None
             continue
+
+        industries[symbol] = filing.get("sic_description") or (filing["metadata"] or {}).get("sic_description")
         accession = (filing["metadata"] or {}).get("source_url", symbol)
+
         edges.extend(
             extract_supplier_edges_from_filing_text(
                 company_symbol=symbol,
@@ -68,8 +104,22 @@ def load_company_graph(portfolio_symbols: list[str], fixtures_dir: str | None = 
                 supplier_aliases=KNOWN_SUPPLIER_ALIASES,
             )
         )
+        if candidate_aliases:
+            edges.extend(
+                extract_supplier_edges_from_filing_text(
+                    company_symbol=symbol,
+                    filing_text=filing["text"],
+                    evidence_label=f"{symbol} 10-K ({accession})",
+                    supplier_aliases=candidate_aliases,
+                )
+            )
+
     graph = build_graph(edges)
-    return export_graph_json(graph)
+    result = export_graph_json(graph)
+    result["industries"] = industries
+    if not_found:
+        result["symbols_without_filing_evidence"] = not_found
+    return result
 
 
 @tool

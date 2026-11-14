@@ -86,16 +86,12 @@ def search_filings_fulltext(query: str, symbols: list[str] | None = None, fixtur
     return {"query": query, "symbols_searched": symbols, "hits": hits, "found": len(hits) > 0}
 
 
-@tool
-def propose_candidate_entities(text: str, max_candidates: int = 10) -> dict:
-    """Heuristically propose candidate entity/organization names from free text (a
-    regulatory document's title+abstract, a news snippet) for further investigation.
-
-    This is NOT named-entity recognition and NOT a claim of any kind -- it's a regex
-    proper-noun-phrase extractor, intentionally noisy. Every candidate it returns must
-    still be verified (e.g. via search_filings_fulltext or alerts.relevance) before
-    being treated as more than "worth checking."
-    """
+def extract_candidate_entities(text: str, max_candidates: int = 10) -> list[str]:
+    """Plain (non-@tool) implementation shared by `propose_candidate_entities` below
+    and by `exposure_tools.load_company_graph`, which needs to run this same
+    extraction internally (not as an agent-invoked tool call) to build a per-event,
+    per-portfolio exposure graph instead of only checking the fixed
+    KNOWN_SUPPLIER_ALIASES seed list."""
     seen: dict[str, None] = {}
     for raw_match in _CANDIDATE_ENTITY_RE.finditer(text):
         candidate = raw_match.group(0).strip()
@@ -110,8 +106,20 @@ def propose_candidate_entities(text: str, max_candidates: int = 10) -> dict:
         if len(non_connector_tokens) < 2:
             continue
         seen.setdefault(candidate, None)
+    return list(seen.keys())[:max_candidates]
 
-    candidates = list(seen.keys())[:max_candidates]
+
+@tool
+def propose_candidate_entities(text: str, max_candidates: int = 10) -> dict:
+    """Heuristically propose candidate entity/organization names from free text (a
+    regulatory document's title+abstract, a news snippet) for further investigation.
+
+    This is NOT named-entity recognition and NOT a claim of any kind -- it's a regex
+    proper-noun-phrase extractor, intentionally noisy. Every candidate it returns must
+    still be verified (e.g. via search_filings_fulltext or alerts.relevance) before
+    being treated as more than "worth checking."
+    """
+    candidates = extract_candidate_entities(text, max_candidates=max_candidates)
     return {"candidates": candidates, "method": "regex proper-noun extraction (heuristic, not NER)"}
 
 

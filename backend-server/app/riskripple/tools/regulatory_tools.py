@@ -12,6 +12,7 @@ from rapidfuzz.utils import default_process
 from strands import tool
 
 from app.riskripple.config import FIXTURES_DIR
+from app.riskripple.ingestion import filings_sec
 from app.riskripple.rag.chunking import chunk_document
 from app.riskripple.rag.retrieval import LocalLexicalRetriever, build_evidence_context
 
@@ -66,17 +67,38 @@ def search_sanctions_records(entity_name: str, fixtures_dir: str | None = None, 
 
 @tool
 def retrieve_company_filings(symbol: str, fixtures_dir: str | None = None) -> dict:
-    """Load a company's frozen 10-K text fixture and its source metadata."""
-    base = Path(fixtures_dir or FIXTURES_DIR) / "filings"
-    text_path = base / f"{symbol}_10K.txt"
-    meta_path = base / f"{symbol}_10K.metadata.json"
+    """Load a company's 10-K text and source metadata (including its real SEC industry
+    classification, `sic_description`). Checks the local cache first (the 3 pre-fetched
+    demo fixtures, or any symbol fetched by a prior call); if a symbol isn't cached,
+    live-fetches its real, current 10-K from SEC EDGAR (resolving its CIK from SEC's
+    free ticker map) and caches it for next time. This means ANY real ticker can be
+    checked for exposure, not just the 3 companies in the original demo fixture set --
+    returns `found: False` only if the ticker genuinely has no resolvable CIK or no
+    10-K on file, never because it merely wasn't pre-fetched."""
+    resolved_dir = fixtures_dir or FIXTURES_DIR
+    base = Path(resolved_dir) / "filings"
+    text_path = base / f"{symbol.upper()}_10K.txt"
+    meta_path = base / f"{symbol.upper()}_10K.metadata.json"
+
     if not text_path.exists():
-        return {"found": False, "symbol": symbol}
+        fetched = filings_sec.fetch_and_cache_10k(symbol, resolved_dir)
+        if fetched is None:
+            return {"found": False, "symbol": symbol}
+        return {
+            "found": True,
+            "symbol": symbol,
+            "text": fetched["text"],
+            "metadata": fetched["metadata"],
+            "sic_description": fetched["sic_description"],
+        }
+
+    metadata = json.loads(meta_path.read_text()) if meta_path.exists() else None
     return {
         "found": True,
         "symbol": symbol,
         "text": text_path.read_text(),
-        "metadata": json.loads(meta_path.read_text()) if meta_path.exists() else None,
+        "metadata": metadata,
+        "sic_description": (metadata or {}).get("sic_description"),
     }
 
 

@@ -139,10 +139,13 @@ def _summarize_message(message: dict) -> dict:
 
 @router.post("/investigate")
 def investigate(request: InvestigateRequest):
-    """Run the Ripple Investigation Agent (Bedrock/Strands) over an already-confirmed
-    event and portfolio holdings, looking for additional ripple effects beyond the
-    existing exposure graph's fixed alias lists. Returns the agent's final answer plus
-    a trace of every tool call it made (tool name, input, result) for UX/explainability.
+    """Run the Ripple Investigation Agent (Bedrock/Strands) over an event description
+    and a set of portfolio holdings. The agent establishes exposure itself, grounded in
+    each holding's real (live-fetched) SEC filing and industry classification -- not a
+    fixed semiconductor-only alias list -- so a utility holding a chip event is
+    correctly reported as unexposed, and a tech holding an unrelated event isn't
+    reflexively tied to chips either. Returns the agent's final answer plus a trace of
+    every tool call it made (tool name, input, result) for UX/explainability.
     """
     try:
         from app.riskripple.agents.definitions import build_ripple_investigator_agent
@@ -156,8 +159,10 @@ def investigate(request: InvestigateRequest):
 
     prompt = (
         f"Event: {request.event_description}\n"
-        f"Portfolio holdings already matched to this event: {', '.join(request.portfolio_holdings)}\n\n"
-        "Investigate further ripple effects per your instructions."
+        f"Portfolio holdings to investigate: {', '.join(request.portfolio_holdings)}\n\n"
+        "Determine, with real evidence, whether and how each holding is exposed to this "
+        "event, per your instructions. Do not assume any holding is or isn't relevant "
+        "before checking."
     )
 
     try:

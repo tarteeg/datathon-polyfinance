@@ -14,6 +14,7 @@ a genuine, not cosmetic, compliance gap.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -100,6 +101,32 @@ def fetch_company_submissions(cik: str, *, client: httpx.Client | None = None) -
 
 def filter_filings(filings: list[FilingSummary], form_type: str, limit: int = 5) -> list[FilingSummary]:
     return [f for f in filings if f.form_type == form_type][:limit]
+
+
+COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+_TICKER_TO_CIK_CACHE: dict[str, str] | None = None
+
+
+def resolve_cik_for_ticker(ticker: str, *, client: httpx.Client | None = None) -> str | None:
+    """Resolve a ticker (e.g. 'AAPL') to its zero-padded 10-digit CIK using SEC's free,
+    no-auth ticker map. Caches the full map in-process after the first call -- it's a
+    single ~700KB file covering every registrant, cheap to keep in memory for the
+    process lifetime rather than re-fetching per ticker."""
+    global _TICKER_TO_CIK_CACHE
+    if _TICKER_TO_CIK_CACHE is None:
+        own_client = client is None
+        client = client or httpx.Client(timeout=30.0, headers=_HEADERS)
+        try:
+            resp = client.get(COMPANY_TICKERS_URL)
+            resp.raise_for_status()
+            payload = resp.json()
+        finally:
+            if own_client:
+                client.close()
+        _TICKER_TO_CIK_CACHE = {
+            entry["ticker"].upper(): str(entry["cik_str"]).zfill(10) for entry in payload.values()
+        }
+    return _TICKER_TO_CIK_CACHE.get(ticker.strip().upper())
 
 
 @dataclass
@@ -238,3 +265,43 @@ def fetch_filing_text(
         license_or_restriction="U.S. public filing via SEC EDGAR.",
     )
     return text, metadata
+
+
+def fetch_and_cache_10k(symbol: str, fixtures_dir) -> dict | None:
+    """Live-fetch a symbol's most recent 10-K (resolving its CIK via the free SEC
+    ticker map) and cache it on disk under `fixtures_dir/filings/` using the same
+    `{symbol}_10K.txt` / `.metadata.json` convention as the pre-fetched demo fixtures,
+    so this only has to hit SEC once per symbol (not once per request) and so any
+    symbol -- not just the 3 pre-fetched demo companies -- can be checked for real
+    exposure. Returns None (no exception) if the ticker doesn't resolve to a CIK or
+    has no 10-K on file -- a real, honest "nothing found", not a crash.
+    """
+    from pathlib import Path
+
+    cik = resolve_cik_for_ticker(symbol)
+    if not cik:
+        return None
+
+    try:
+        submissions = fetch_company_submissions(cik)
+        ten_ks = filter_filings(submissions.recent_filings, "10-K", limit=1)
+        if not ten_ks:
+            return None
+        text, meta = fetch_filing_text(cik, ten_ks[0])
+    except Exception:
+        return None
+
+    base = Path(fixtures_dir) / "filings"
+    base.mkdir(parents=True, exist_ok=True)
+    text_path = base / f"{symbol.upper()}_10K.txt"
+    meta_path = base / f"{symbol.upper()}_10K.metadata.json"
+
+    meta_dict = meta.model_dump(mode="json") if hasattr(meta, "model_dump") else vars(meta)
+    meta_dict["sic_description"] = submissions.sic_description
+    meta_dict["company_name"] = submissions.name
+    meta_dict["fetched_live"] = True
+
+    text_path.write_text(text)
+    meta_path.write_text(json.dumps(meta_dict, indent=2, default=str))
+
+    return {"text": text, "metadata": meta_dict, "sic_description": submissions.sic_description}
