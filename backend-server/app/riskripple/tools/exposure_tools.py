@@ -16,7 +16,7 @@ from app.riskripple.graph.company_graph import (
 from app.riskripple.config import FIXTURES_DIR
 from app.riskripple.schemas.models import ExposureEdge
 from app.riskripple.tools.regulatory_tools import retrieve_company_filings, summarize_event_evidence
-from app.riskripple.tools.research_tools import extract_candidate_entities
+from app.riskripple.tools.research_tools import extract_candidate_entities, is_generic_category_term
 
 # Confirmed by a real alert-scan run: broadening candidate extraction to catch single
 # words (needed to catch "titanium") also let through generic corporate/regulatory
@@ -152,14 +152,22 @@ def load_company_graph(
             )
         )
         if candidate_aliases:
-            edges.extend(
-                extract_supplier_edges_from_filing_text(
-                    company_symbol=symbol,
-                    filing_text=filing["text"],
-                    evidence_label=f"{symbol} 10-K ({accession})",
-                    supplier_aliases=candidate_aliases,
-                )
+            candidate_edges = extract_supplier_edges_from_filing_text(
+                company_symbol=symbol,
+                filing_text=filing["text"],
+                evidence_label=f"{symbol} 10-K ({accession})",
+                supplier_aliases=candidate_aliases,
             )
+            # A candidate derived SOLELY from a generic industry/geography/mechanism
+            # category word (e.g. "semiconductor", "Taiwan") is kept for Stage-1
+            # recall, but relabeled so downstream code (alerts.relevance,
+            # alerts.verification) treats it as an unverified candidate requiring
+            # Stage-2 evidence verification, not as alert-worthy supplier evidence
+            # on its own -- see research_tools.is_generic_category_term.
+            for edge in candidate_edges:
+                if is_generic_category_term(edge.target):
+                    edge = edge.model_copy(update={"relationship_type": "generic_candidate"})
+                edges.append(edge)
 
     graph = build_graph(edges)
     result = export_graph_json(graph)

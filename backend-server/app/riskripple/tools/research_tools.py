@@ -127,26 +127,55 @@ _CANDIDATE_ENTITY_RE = re.compile(
 # own `search_filings_fulltext`/`search_sec_edgar_live` tool calls, which aren't
 # constrained to this list.
 _SINGLE_WORD_RE = re.compile(r"[A-Za-z][A-Za-z\-]{3,}")
-_SINGLE_WORD_ALLOWLIST = frozenset({
-    # Materials / commodities / strategic minerals
+
+# SPECIFIC terms: a literal match on one of these is itself meaningful evidence --
+# a company's filing doesn't generically mention "titanium" the way it generically
+# mentions "semiconductor" or "China". Confirmed by this session's own testing: a
+# company naming a specific material is rare and substantive (e.g. Boeing's 10-K
+# naming titanium as a named critical raw material), unlike generic category words
+# which show up in nearly any company's filing in that broad industry regardless of
+# real relevance to a specific event.
+_SPECIFIC_SINGLE_WORD_TERMS = frozenset({
     "titanium", "copper", "cobalt", "lithium", "nickel", "aluminum", "aluminium",
     "steel", "uranium", "tungsten", "palladium", "platinum", "silicon", "gallium",
     "germanium", "neodymium", "graphite", "magnesium", "rhodium", "silver", "gold",
     "oil", "gas", "wheat", "grain",
-    # Technology / product categories frequently the subject of export controls
+})
+
+# GENERIC category/mechanism/geography terms: confirmed by a real live alert-scan
+# producing a false positive -- an AMD-focused market-roundup article containing the
+# word "Semiconductor" fired an alert against AAPL purely because AAPL's own 10-K
+# also mentions "semiconductor" somewhere generically. These terms describe a TYPE
+# of thing or a TYPE of mechanism (an industry category, a nationality, a sanctions
+# instrument), not a specific fact -- same underlying problem as the
+# `_GENERIC_PROCEDURAL_WORDS` denylist above, just a different vocabulary (that one
+# is about the rulemaking process; this one is about industry/geography categories).
+# A literal match on one of these is kept as a Stage-1 CANDIDATE (for recall -- it
+# may still turn into a real alert after Stage-2 verification in
+# `alerts/verification.py`), but must never become an alert on its own.
+_GENERIC_CATEGORY_TERMS = frozenset({
+    # Technology/product categories -- too broad to be specific evidence alone.
     "semiconductor", "semiconductors", "chip", "chips", "wafer", "wafers",
     "microchip", "microchips", "software", "hardware", "encryption", "satellite",
     "satellites", "drone", "drones", "battery", "batteries",
-    # Sanctions / trade mechanism terms
+    # Sanctions/trade MECHANISM words -- naming the instrument, not a specific target.
     "sanctions", "sanctioned", "embargo", "embargoes", "tariff", "tariffs",
     "blacklist", "blacklisted",
-    # Countries/nationalities most commonly the subject of U.S./Canadian sanctions
-    # and export-control regimes (not an exhaustive geopolitical list -- a curated
-    # set matching this system's actual demo scenarios).
+    # Countries/nationalities -- a shared country name alone is geography, not a
+    # transmission mechanism (confirmed: the user's own test case explicitly
+    # requires "Taiwan" alone to be insufficient).
     "russia", "russian", "ukraine", "ukrainian", "china", "chinese", "iran",
     "iranian", "cuba", "cuban", "syria", "syrian", "venezuela", "venezuelan",
     "belarus", "belarusian", "myanmar", "taiwan", "taiwanese", "korea", "korean",
 })
+
+_SINGLE_WORD_ALLOWLIST = _SPECIFIC_SINGLE_WORD_TERMS | _GENERIC_CATEGORY_TERMS
+
+
+def is_generic_category_term(word: str) -> bool:
+    """True if `word` (any case) is a generic industry/geography/mechanism category
+    term rather than a specific material/fact -- see `_GENERIC_CATEGORY_TERMS`."""
+    return word.lower() in _GENERIC_CATEGORY_TERMS
 
 
 def _single_word_candidates(text: str, max_candidates: int) -> list[str]:

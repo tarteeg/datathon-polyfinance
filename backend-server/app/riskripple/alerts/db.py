@@ -39,3 +39,60 @@ def get_all_portfolios() -> dict[str, list[str]]:
         return portfolios
     finally:
         conn.close()
+
+
+# Alert deduplication: this app's real shared Aurora Postgres has no alerts table of
+# its own yet. Rather than touch any existing table, this adds exactly one small new
+# one -- idempotent to create, isolated from everything else in the database -- so a
+# repeated scan of the same document against the same (user, symbol) pair doesn't
+# produce a duplicate alert every time the scan endpoint is called.
+_ENSURE_DEDUP_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS riskripple_alert_dedup (
+    document_key TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (document_key, user_id, symbol)
+);
+"""
+
+
+def ensure_dedup_table() -> None:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(_ENSURE_DEDUP_TABLE_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def filter_unseen(candidates: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+    """`candidates` is a list of (document_key, user_id, symbol) triples. Returns only
+    the ones NOT already recorded as seen, and atomically records all of `candidates`
+    as seen in the same call (via `ON CONFLICT DO NOTHING`) -- so a caller that checks
+    once and then only acts on the unseen subset can't double-record on a retry, and
+    two concurrent scans can't both treat the same pair as unseen.
+    """
+    if not candidates:
+        return []
+    ensure_dedup_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT document_key, user_id, symbol FROM riskripple_alert_dedup "
+            "WHERE (document_key, user_id, symbol) IN %s",
+            (tuple(candidates),),
+        )
+        already_seen = set(cur.fetchall())
+        unseen = [c for c in candidates if c not in already_seen]
+        cur.executemany(
+            "INSERT INTO riskripple_alert_dedup (document_key, user_id, symbol) "
+            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            candidates,
+        )
+        conn.commit()
+        return unseen
+    finally:
+        conn.close()

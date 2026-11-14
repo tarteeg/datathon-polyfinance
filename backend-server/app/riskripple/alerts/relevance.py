@@ -29,6 +29,13 @@ class RelevanceMatch:
     node_id: str  # the canonical exposure-graph node that matched (== symbol for "direct")
     matched_entity: str  # the literal alias text actually found in the document
     evidence_snippet: str
+    # True when this match's ONLY basis is a generic industry/geography/mechanism
+    # category word (edge relationship_type == "generic_candidate" from
+    # exposure_tools.load_company_graph) -- a Stage-1 candidate that still needs
+    # Stage-2 evidence verification (alerts.verification.classify_match) before it
+    # may become a recorded alert. False for direct matches and for matches on a
+    # specific material/known-supplier/company name, which are already real evidence.
+    needs_verification: bool = False
 
 
 def _word_match(alias: str, text: str) -> re.Match | None:
@@ -105,6 +112,7 @@ def check_relevance(document_text: str, graph_json: dict, portfolio_symbols: lis
                             node_id=node_id,
                             matched_entity=matched_alias,
                             evidence_snippet=_sentence_containing(document_text, hit),
+                            needs_verification=(edge.get("relationship_type") == "generic_candidate"),
                         )
                     )
     return matches
