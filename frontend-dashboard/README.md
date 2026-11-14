@@ -29,7 +29,7 @@ Start the dashboard with `npm run dev` and open [localhost:3000](http://localhos
 
 ## Finance chat setup
 
-Set `CHAT_API_KEY` to the same server-side value as FastAPI and configure `BACKEND_API_URL` to reach it. Follow the [backend chat setup](../backend-server/README.md#finance-chat) for Bedrock configuration. Existing installations should rerun `npm run chat:migrate` to add chart, news, and stock snapshots and migrate any older single-conversation history.
+Set `CHAT_API_KEY` to the same server-side value as FastAPI and configure `BACKEND_API_URL` to reach it. Follow the [backend chat setup](../backend-server/README.md#finance-chat) for Bedrock configuration. Existing installations should rerun `npm run chat:migrate` to add chart, news, stock, and portfolio snapshots and migrate any older single-conversation history.
 
 Select **Explain this chart** on a stock page to save its current chart in a new conversation, then choose **Show related news** for recent coverage. Open **Finance chat** after signing in. The most recently active thread opens first. New chats use the first question as their title. Each request sends up to ten completed exchanges from the selected thread and the new question to Bedrock.
 

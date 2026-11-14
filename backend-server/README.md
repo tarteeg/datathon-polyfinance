@@ -35,7 +35,7 @@ Candle times and the quote's `regularMarketTime` are Unix seconds.
 | Period | Candle interval |
 | --- | --- |
 | `1d` (default), `5d` | 1 minute |
-| `1mo`, `3mo`, `6mo`, `ytd`, `1y` | 1 hour |
+| `mtd`, `1mo`, `3mo`, `6mo`, `ytd`, `1y` | 1 hour |
 | `3y`, `5y` | 1 day |
 
 ## Layout
@@ -67,8 +67,10 @@ sectors and the ranking’s UTC cutoff time.
 
 ## Finance chat
 
-`POST /chat` accepts the current question and up to ten previous exchanges from the signed-in dashboard. For stock-chart conversations the dashboard also supplies the saved chart figures in `chart`. FastAPI calls Bedrock Converse and returns an `answer`. The dashboard saves each completed exchange to Aurora.
+`POST /chat` accepts the current question and up to ten previous exchanges from the signed-in dashboard. For stock-chart conversations the dashboard also supplies the saved chart figures in `chart`. FastAPI calls Bedrock Converse and returns an `answer`. Interactive chat uses `POST /chat/stream` with the same request body. It sends newline-delimited JSON text deltas followed by a completion record containing the source snapshots. The dashboard saves each completed exchange to Aurora.
 
-Set `AWS_REGION` and `BEDROCK_MODEL_ID` in the backend environment to the region and model or inference profile you can invoke. Configure backend AWS credentials with `bedrock:InvokeModel` access or set a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Generate a shared key with `openssl rand -hex 32` and set `CHAT_API_KEY` to that value in both apps’ server environments. The dashboard supplies it in the `X-Chat-Key` header.
+Set `AWS_REGION` and `BEDROCK_MODEL_ID` in the backend environment to the region and model or inference profile you can invoke. Configure backend AWS credentials with `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` access or set a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Generate a shared key with `openssl rand -hex 32` and set `CHAT_API_KEY` to that value in both apps’ server environments. The dashboard supplies it in the `X-Chat-Key` header.
 
-For news questions, Bedrock can request one read-only StocksFeed search per message. The response includes the numbered source list and a news snapshot. The dashboard can send that snapshot as `previous_news` when continuing a thread.
+When the dashboard supplies session-scoped holdings, Bedrock can request quantities, valuation or coverage of saved tickers through `get_my_portfolio`. Quotes are grouped by currency and stocks without a quantity are tracked separately. Run `npm run chat:migrate` in the dashboard to enable saved portfolio breakdowns.
+
+For news questions, Bedrock can request multiple read-only StocksFeed searches per message. The response includes the numbered source list and a news snapshot. The dashboard can send that snapshot as `previous_news` when continuing a thread.
