@@ -163,14 +163,19 @@ class BedrockKnowledgeBaseRetriever:
         results = []
         for item in response.get("retrievalResults", []):
             metadata = item.get("metadata", {})
+            source_url = item.get("location", {}).get("s3Location", {}).get("uri")
+            # This KB's ingested documents carry no title/document_id in their vector
+            # metadata (confirmed live, 2026-11-14: both keys come back empty) -- fall
+            # back to the S3 object's filename so a citation never renders blank.
+            fallback_title = source_url.rsplit("/", 1)[-1] if source_url else None
             chunk = DocumentChunk(
                 chunk_id=metadata.get("chunk_id", ""),
-                document_id=metadata.get("document_id", ""),
+                document_id=metadata.get("document_id") or fallback_title or "",
                 text=item.get("content", {}).get("text", ""),
                 token_count=0,
                 position=0,
-                source_url=item.get("location", {}).get("s3Location", {}).get("uri"),
-                title=metadata.get("title"),
+                source_url=source_url,
+                title=metadata.get("title") or fallback_title,
             )
             results.append(RetrievedChunk(chunk=chunk, score=item.get("score", 0.0)))
         return results

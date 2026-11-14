@@ -5,6 +5,7 @@ for the live S3 processed/ prefix in a deployed environment.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from rapidfuzz import fuzz, process
@@ -14,7 +15,20 @@ from strands import tool
 from app.riskripple.config import FIXTURES_DIR
 from app.riskripple.ingestion import filings_sec
 from app.riskripple.rag.chunking import chunk_document
-from app.riskripple.rag.retrieval import LocalLexicalRetriever, build_evidence_context
+from app.riskripple.rag.retrieval import (
+    BedrockKnowledgeBaseRetriever,
+    LocalLexicalRetriever,
+    build_evidence_context,
+)
+
+# Selects the production semantic retriever when configured/reachable; the local
+# TF-IDF retriever is kept as the fallback (required for offline dev/tests, and as
+# a safety net if the Bedrock call fails -- e.g. expired hackathon credentials, or a
+# company whose filing hasn't been synced into the Knowledge Base yet). Not a secret
+# -- this is the real, already-verified KB id for the hackathon account, but it's
+# still overridable (and settable to "" to force offline/lexical-only) rather than
+# hardcoded as the only option.
+_DEFAULT_KNOWLEDGE_BASE_ID = "SSYDB0BFCH"
 
 
 @tool
@@ -121,24 +135,49 @@ def resolve_entity_aliases(entity_name: str, known_aliases: dict[str, list[str]]
 @tool
 def summarize_event_evidence(event_title: str, filing_symbol: str, fixtures_dir: str | None = None) -> dict:
     """Retrieve the most relevant passages from a company's 10-K for a given
-    regulatory event title, using the local lexical retriever, and return a bounded,
-    citation-bearing evidence context."""
+    regulatory event title, and return a bounded, citation-bearing evidence context.
+
+    Prefers the real Bedrock Knowledge Base (semantic/embedding retrieval) when
+    `RISKRIPPLE_KNOWLEDGE_BASE_ID` is set (defaults to the verified hackathon KB,
+    `SSYDB0BFCH`) and the live call succeeds. Falls back to the local TF-IDF
+    retriever -- built fresh from this one filing's own text -- if the KB id is
+    cleared (set to ""), the call fails (e.g. expired credentials), or it returns no
+    results (e.g. this filing hasn't been synced into the KB yet). Set
+    RISKRIPPLE_KNOWLEDGE_BASE_ID="" to force lexical-only (offline dev/tests).
+    """
     filing = retrieve_company_filings(filing_symbol, fixtures_dir=fixtures_dir)
     if not filing["found"]:
-        return {"evidence_context": "", "found": False}
+        return {"evidence_context": "", "found": False, "retriever_used": None}
 
-    chunks = chunk_document(
-        document_id=f"{filing_symbol}_10K",
-        text=filing["text"],
-        title=f"{filing_symbol} 10-K",
-        source_url=filing["metadata"]["source_url"] if filing["metadata"] else None,
-    )
-    retriever = LocalLexicalRetriever(chunks)
-    results = retriever.retrieve(event_title, top_k=5)
+    kb_id = os.environ.get("RISKRIPPLE_KNOWLEDGE_BASE_ID", _DEFAULT_KNOWLEDGE_BASE_ID)
+    results = []
+    retriever_used = None
+    if kb_id:
+        try:
+            region = os.environ.get("RISKRIPPLE_KB_REGION", os.environ.get("BEDROCK_REGION", "us-east-1"))
+            bedrock_retriever = BedrockKnowledgeBaseRetriever(knowledge_base_id=kb_id, region_name=region)
+            results = bedrock_retriever.retrieve(event_title, top_k=5)
+            if results:
+                retriever_used = "bedrock"
+        except Exception:
+            results = []
+
+    if not results:
+        chunks = chunk_document(
+            document_id=f"{filing_symbol}_10K",
+            text=filing["text"],
+            title=f"{filing_symbol} 10-K",
+            source_url=filing["metadata"]["source_url"] if filing["metadata"] else None,
+        )
+        local_retriever = LocalLexicalRetriever(chunks)
+        results = local_retriever.retrieve(event_title, top_k=5)
+        retriever_used = "lexical"
+
     return {
         "found": len(results) > 0,
         "evidence_context": build_evidence_context(results),
         "n_chunks_retrieved": len(results),
+        "retriever_used": retriever_used,
     }
 
 
