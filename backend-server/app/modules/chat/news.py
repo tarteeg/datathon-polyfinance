@@ -24,11 +24,12 @@ NEWS_TOOL = {"tools": [{"toolSpec": {
 }}]}
 
 
-def search_news(query: NewsQuery) -> dict:
+def search_news(query: NewsQuery, *, portfolio_symbols: list[str] | None = None) -> dict:
     params = {"hours": query.hours, "limit": 15}
-    if query.tickers:
+    tickers = portfolio_symbols if portfolio_symbols is not None else query.tickers
+    if tickers:
         symbols = set()
-        for raw in query.tickers:
+        for raw in tickers:
             ticker = raw.upper().strip()
             if not re.fullmatch(r"[A-Z0-9^.-]{1,15}", ticker):
                 raise ValueError("Invalid ticker")
@@ -51,7 +52,7 @@ def search_news(query: NewsQuery) -> dict:
         }
         if len(stories) == 3:
             break
-    return {"query": query.model_dump(), "retrieved": datetime.now(timezone.utc).isoformat(), "stories": list(stories.values())}
+    return {"query": {**query.model_dump(), "tickers": tickers}, "retrieved": datetime.now(timezone.utc).isoformat(), "stories": list(stories.values())}
 
 
 def source_list(news: dict) -> str:

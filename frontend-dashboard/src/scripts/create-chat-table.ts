@@ -34,6 +34,8 @@ async function migrate() {
     await client.query("ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS chart_snapshot JSONB");
     await client.query("ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS news_snapshot JSONB");
     await client.query("ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS stock_snapshot JSONB");
+    await client.query("ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS tool_activity JSONB");
+    await client.query("ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS portfolio_snapshot JSONB");
     await client.query("COMMIT");
     console.log("Chat threads are ready.");
   } catch (error) {
