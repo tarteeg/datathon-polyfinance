@@ -94,14 +94,20 @@ Réalisé le 14 novembre 2026.
 
 **Critère de sortie :** atteint. Le secret est lisible par le rôle d'exécution, et par lui seul.
 
-### Phase 5 : services ECS Express Mode ⬜
-- ⬜ Créer le service backend à partir de l'image ECR. Port 8000. Variable `STOCKSFEED_BASE_URL`. Journaux dans CloudWatch.
-- ⬜ Créer le service frontend. Port 3000. Variables : `BACKEND_API_URL` (URL du backend), `BETTER_AUTH_URL`, secrets de la phase 4.
-- ⬜ Noter l'URL HTTPS générée pour le frontend, puis mettre `BETTER_AUTH_URL` à cette valeur exacte et redéployer. Sans cela, les connexions échouent.
-- ⬜ Vérifier que les services joignent Aurora (la règle actuelle du groupe de sécurité l'autorise) et que le frontend joint le backend.
-- ⬜ ⚠️ Vérifier le comportement d'ECS Express Mode dans ce compte (création du rôle d'infrastructure, équilibreur de charge, durée de création).
+### Phase 5 : services ECS Express Mode 🟡 (déployés, validation de bout en bout en attente)
+Réalisé le 14 novembre 2026, avec les images d'étiquette `24360fd`.
+- ✅ Rôle d'infrastructure `polyfinance-ecs-infrastructure-role` (approbation : `ecs.amazonaws.com`, politique gérée `AmazonECSInfrastructureRoleforExpressGatewayServices`). Cluster ECS `polyfinance`. Groupes de journaux `/ecs/polyfinance-backend` et `/ecs/polyfinance-frontend` (conservation 7 jours).
+- ✅ Service `polyfinance-backend` : port 8000, 0,5 vCPU et 1 Go, une tâche, vérification de santé `/docs`. URL publique : https://po-e59a191cd93e413aa245ac0c45f4c3e9.ecs.us-east-1.on.aws. Rollout terminé (`COMPLETED`).
+- ✅ Service `polyfinance-frontend` : port 3000, 1 vCPU et 2 Go, une tâche, vérification de santé `/auth/v1/login`. URL publique : https://po-8688b8a9273e447c9c115ab93278e7fe.ecs.us-east-1.on.aws. Variables : `DATABASE_PORT`, `BACKEND_API_URL`, `BETTER_AUTH_URL`. Secrets lus dans `polyfinance/app` : les six clés de la phase 4.
+- ✅ `BETTER_AUTH_URL` réglée sur l'URL exacte du frontend après sa création (mise à jour du service). Elle avait d'abord une valeur provisoire, car l'URL n'existe qu'après la création.
+- ✅ Vérifié par requêtes : le backend répond (HTTP 200) sur `/docs`, `/stock/AAPL/history` et `/articles`. Le frontend répond (HTTP 200) sur `/auth/v1/login` et `/api/auth/get-session`. Les journaux du frontend montrent un démarrage de Next.js sans erreur.
+- ⚠️ **Non vérifié** : inscription, connexion et pages après connexion (cours, actualités, portefeuille). Cela inclut l'appel du frontend vers le backend et l'écriture d'un portefeuille dans Aurora depuis ECS. À tester dans un navigateur.
+- ⚠️ Au dernier contrôle, le déploiement du frontend restait `IN_PROGRESS` : l'ancienne révision (celle de la valeur provisoire de `BETTER_AUTH_URL`) n'était pas encore retirée. Le site répond, mais à reconfirmer.
+- ⚠️ Le premier essai de création du backend a échoué sur un droit du rôle d'infrastructure (`logs:DescribeLogGroups`), probablement un délai de propagation IAM : le second essai, quelques secondes plus tard, a réussi. À garder en tête si on recrée un service.
+- ⚠️ Le groupe de sécurité d'Aurora reste ouvert au port 5432 depuis `0.0.0.0/0` (état de départ). Décision de le restreindre encore à prendre.
+- ⚠️ Coût : les deux services (Fargate et équilibreur de charge) facturent à l'heure tant qu'ils tournent. À arrêter après la remise.
 
-**Critère de sortie :** l'URL publique affiche la page de connexion avec son style, et un utilisateur peut s'inscrire, se connecter et ajouter un titre à son portefeuille.
+**Critère de sortie :** pas encore atteint. Il faut qu'un utilisateur s'inscrive, se connecte et ajoute un titre à son portefeuille sur l'URL publique du frontend.
 
 ### Phase 6 : couche d'agent AlphaForge AI ⬜
 C'est elle qui rapporte les points sur les critères AWS (15 %) et Agentique (20 %). Détails dans `context/idees-datathon.md` et `context/VEILLE-TECHNOLOGIQUE.md`.
