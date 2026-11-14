@@ -1,5 +1,5 @@
-# syntax=docker/dockerfile:1
-FROM node:24-slim AS base
+ARG NODE_IMAGE=node:24-slim
+FROM ${NODE_IMAGE} AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
