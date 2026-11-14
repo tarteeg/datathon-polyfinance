@@ -17,6 +17,7 @@ from app.modules.chat.stock import STOCK_TOOL, StockQuery, lookup_stock, stock_s
 from app.modules.chat.portfolio import PORTFOLIO_TOOL, Holding, PortfolioQuery, portfolio_snapshot
 from app.modules.chat.news import NEWS_TOOL, NewsQuery, search_news, source_list
 from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANALYSIS_TOOLS, run_analysis_tool
+from app.modules.verification.ledger import EvidenceLedger
 
 router = APIRouter()
 
@@ -124,6 +125,7 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
     searches = []
     rankings = []
     portfolio = None
+    ledger = EvidenceLedger()
     # Calculation answers carry before/after tables; 800 tokens cut them off mid-table.
     args = dict(modelId=model, messages=messages, system=system, inferenceConfig={"maxTokens": 2000})
     try:
@@ -211,6 +213,7 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                         news = {"queries": [r["query"] for r in searches], "retrieved": searches[-1]["retrieved"],
                                 "stories": list(stories.values())}
                     evidence.append({"StocksFeed sources in citation order": news})
+                ledger.record(call["toolUseId"], call["name"], status, call["input"], evidence)
                 if streaming:
                     yield {"activity": {**step, "status": status}}
                 results.append({"toolResult": {"toolUseId": call["toolUseId"], "content": [{"text": json.dumps(evidence)}]}})
