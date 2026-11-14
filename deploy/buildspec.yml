@@ -1,17 +1,28 @@
 version: 0.2
 
-# Builds the backend and frontend images and pushes them to Amazon ECR.
-# Environment variables (set on the CodeBuild project or per build):
-#   IMAGE_TAG  tag for the images, usually the Git commit hash. Defaults to "latest".
+# Builds the backend and frontend images, pushes them to Amazon ECR, then rolls
+# the two ECS Express Mode services onto the new images.
+#
+# Triggered by a CodeBuild webhook on pushes to main, or started by hand.
+# Environment variables (optional):
+#   IMAGE_TAG  tag for the images. Defaults to the first 7 characters of the commit hash.
 # Base images come from the AWS public mirror of Docker Hub to avoid Docker Hub
 # pull limits on shared CodeBuild addresses.
 
 phases:
+  install:
+    commands:
+      # The Express Mode commands need a recent AWS CLI. The CLI bundled in the build image may predate them.
+      - curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+      - unzip -q /tmp/awscliv2.zip -d /tmp
+      - /tmp/aws/install --update
+      - aws --version
   pre_build:
     commands:
       - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
       - export REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
-      - export IMAGE_TAG=${IMAGE_TAG:-latest}
+      - export IMAGE_TAG=${IMAGE_TAG:-$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c1-7)}
+      - echo "Image tag $IMAGE_TAG"
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REGISTRY
   build:
     commands:
@@ -21,4 +32,12 @@ phases:
     commands:
       - docker push $REGISTRY/polyfinance/backend:$IMAGE_TAG
       - docker push $REGISTRY/polyfinance/frontend:$IMAGE_TAG
-      - echo "Pushed $REGISTRY/polyfinance/backend:$IMAGE_TAG and $REGISTRY/polyfinance/frontend:$IMAGE_TAG"
+      # Reuse each service's current container settings (port, logs, variables, secrets)
+      # and change only the image, so a redeploy never drops a secret.
+      - |
+        for SVC in backend frontend; do
+          ARN=arn:aws:ecs:$AWS_DEFAULT_REGION:$AWS_ACCOUNT_ID:service/polyfinance/polyfinance-$SVC
+          CONTAINER=$(aws ecs describe-express-gateway-service --service-arn "$ARN" --query 'service.activeConfigurations[0].primaryContainer' --output json | jq --arg img "$REGISTRY/polyfinance/$SVC:$IMAGE_TAG" '.image = $img')
+          aws ecs update-express-gateway-service --service-arn "$ARN" --primary-container "$CONTAINER" --query 'service.status.statusCode' --output text
+        done
+      - echo "Deploying $IMAGE_TAG to polyfinance-backend and polyfinance-frontend"
