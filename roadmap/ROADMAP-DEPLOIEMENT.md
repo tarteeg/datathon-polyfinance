@@ -117,8 +117,13 @@ Réalisé le 14 novembre 2026.
 - ✅ Rôle de build : droits ajoutés pour la connexion (noms `codeconnections` et `codestar-connections`), la mise à jour des deux services, l'enregistrement des définitions de tâche et la transmission des deux rôles ECS.
 - ✅ Test réussi depuis la branche `deploiement` : build du commit `8434b1b` (construction 137 s, envoi et mise à jour 43 s), images `8434b1b` dans ECR, deux services mis à jour, site toujours en ligne (HTTP 200 sur la connexion, la session, `/docs` et l'historique d'un titre).
 - ✅ Webhook GitHub actif : chaque push sur `main` lance le build et le redéploiement.
-- ⚠️ `main` ne contient pas encore les Dockerfiles ni `deploy/buildspec.yml`. Un push sur `main` avant la fusion de `deploiement` fera échouer le build sans toucher au site. Il faut fusionner `deploiement` dans `main`.
-- ⚠️ Un merge défaillant sur `main` est mis en ligne automatiquement. ECS garde l'ancienne version si la nouvelle échoue à la vérification de santé, mais une erreur qui laisse passer la vérification (page de connexion qui répond, pages internes cassées) serait publiée. Éviter de fusionner juste avant la vidéo.
+- ✅ Fusion de `deploiement` dans `main` par pull request : à partir de là, `main` contient les Dockerfiles et `deploy/buildspec.yml`.
+
+#### Ce que le déploiement automatique fait, et ne fait pas
+Tout push sur `main`, y compris le merge d'une pull request, reconstruit et redéploie les deux services, en environ 5 minutes. Les deux services sont reconstruits à chaque fois, même si un seul a changé. Trois limites :
+1. **Seul le code est déployé.** Les changements de base de données ne le sont pas : une nouvelle table ou une migration (`npm run auth:migrate`, `npm run portfolio:migrate`) se lance à la main. Une nouvelle variable d'environnement ou un nouveau secret s'ajoute aussi à la main au service ECS, car la recette ne change que l'image.
+2. **La version publiée n'est pas garantie fonctionnelle.** Si la nouvelle version ne démarre pas ou échoue à la vérification de santé, ECS garde l'ancienne. Mais cette vérification ne teste que `/auth/v1/login` (frontend) et `/docs` (backend) : une page interne cassée serait mise en ligne.
+3. **Pas d'étape de validation.** Aucun test ni relecture automatique n'est exécuté avant la mise en ligne. Éviter de fusionner juste avant l'enregistrement de la vidéo.
 - ⬜ L'archive S3 et le bucket `polyfinance-build-src-…` ne servent plus. Ils peuvent être supprimés.
 
 ### Phase 6 : couche d'agent AlphaForge AI ⬜
