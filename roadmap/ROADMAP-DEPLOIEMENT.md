@@ -109,6 +109,18 @@ Réalisé le 14 novembre 2026, avec les images d'étiquette `24360fd`.
 
 **Critère de sortie :** pas encore atteint. Il faut qu'un utilisateur s'inscrive, se connecte et ajoute un titre à son portefeuille sur l'URL publique du frontend.
 
+### Phase 5 bis : redéploiement automatique ✅
+Réalisé le 14 novembre 2026.
+- ✅ Connexion AWS CodeConnections `polyfinance-github` (`us-east-1`), état `AVAILABLE`. L'application GitHub *AWS Connector for GitHub* doit avoir accès au dépôt `tarteeg/datathon-polyfinance` : c'est la cause de l'échec des premiers builds (`authorization failed for primary source`), réglée côté GitHub.
+- ✅ Projet CodeBuild `polyfinance-build` : la source est maintenant le dépôt GitHub (via la connexion, clonage à profondeur 1), et non plus l'archive S3. Un seul build à la fois.
+- ✅ `deploy/buildspec.yml` : après l'envoi des images, la recette relit la configuration de chaque service ECS et ne remplace que l'image. Les variables et les six secrets du frontend sont conservés (vérifié après le redéploiement). L'étiquette des images est le hash court du commit. La recette installe une version récente d'AWS CLI.
+- ✅ Rôle de build : droits ajoutés pour la connexion (noms `codeconnections` et `codestar-connections`), la mise à jour des deux services, l'enregistrement des définitions de tâche et la transmission des deux rôles ECS.
+- ✅ Test réussi depuis la branche `deploiement` : build du commit `8434b1b` (construction 137 s, envoi et mise à jour 43 s), images `8434b1b` dans ECR, deux services mis à jour, site toujours en ligne (HTTP 200 sur la connexion, la session, `/docs` et l'historique d'un titre).
+- ✅ Webhook GitHub actif : chaque push sur `main` lance le build et le redéploiement.
+- ⚠️ `main` ne contient pas encore les Dockerfiles ni `deploy/buildspec.yml`. Un push sur `main` avant la fusion de `deploiement` fera échouer le build sans toucher au site. Il faut fusionner `deploiement` dans `main`.
+- ⚠️ Un merge défaillant sur `main` est mis en ligne automatiquement. ECS garde l'ancienne version si la nouvelle échoue à la vérification de santé, mais une erreur qui laisse passer la vérification (page de connexion qui répond, pages internes cassées) serait publiée. Éviter de fusionner juste avant la vidéo.
+- ⬜ L'archive S3 et le bucket `polyfinance-build-src-…` ne servent plus. Ils peuvent être supprimés.
+
 ### Phase 6 : couche d'agent AlphaForge AI ⬜
 C'est elle qui rapporte les points sur les critères AWS (15 %) et Agentique (20 %). Détails dans `context/idees-datathon.md` et `context/VEILLE-TECHNOLOGIQUE.md`.
 - ⬜ Premier appel `converse` à Amazon Bedrock depuis le backend, en `us-east-1`. ⚠️ Vérifier l'accès au modèle choisi dans le compte.
