@@ -1,0 +1,5 @@
+fastapi==0.162.7
+uvicorn==0.54.0
+yfinance==1.8.0
+requests==2.34.2
+python-dotenv>=1,<2
