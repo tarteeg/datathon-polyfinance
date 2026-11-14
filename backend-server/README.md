@@ -64,3 +64,11 @@ Upstream failures return HTTP 502.
 companies ranked by distinct article URLs collected over the past 24 hours.
 Omit `sector` for all sectors. The response includes the available company
 sectors and the ranking’s UTC cutoff time.
+
+## Finance chat
+
+`POST /chat` accepts the current question and up to ten previous exchanges from the signed-in dashboard. For stock-chart conversations the dashboard also supplies the saved chart figures in `chart`. FastAPI calls Bedrock Converse and returns an `answer`. The dashboard saves each completed exchange to Aurora.
+
+Set `AWS_REGION` and `BEDROCK_MODEL_ID` in the backend environment to the region and model or inference profile you can invoke. Configure backend AWS credentials with `bedrock:InvokeModel` access or set a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Generate a shared key with `openssl rand -hex 32` and set `CHAT_API_KEY` to that value in both apps’ server environments. The dashboard supplies it in the `X-Chat-Key` header.
+
+For news questions, Bedrock can request one read-only StocksFeed search per message. The response includes the numbered source list and a news snapshot. The dashboard can send that snapshot as `previous_news` when continuing a thread.
