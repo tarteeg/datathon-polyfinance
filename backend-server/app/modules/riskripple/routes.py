@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import asdict, is_dataclass
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -450,9 +452,40 @@ def _run_investigation(request: InvestigateRequest) -> dict:
         "before checking."
     )
 
+    # Hard wall-clock ceiling on the raw agent call. Confirmed live: with no cap here,
+    # a stalled Bedrock/Strands streaming call can hang indefinitely with zero further
+    # log output -- previously invisible because the old synchronous endpoint's HTTP
+    # connection got cut by the gateway's own ~60s idle timeout long before anyone
+    # could observe it. This can't actually kill the underlying thread (Python has no
+    # safe way to do that), so a hung call's thread is simply abandoned and its
+    # eventual result discarded -- but the caller gets a clean, prompt failure instead
+    # of a job that silently stays "pending" forever. 240s is generous versus every
+    # healthy run observed today (which complete well under 180s even with multiple
+    # holdings and the richer prompt).
+    _AGENT_CALL_TIMEOUT_SECONDS = 240
+    executor = ThreadPoolExecutor(max_workers=1)
     try:
-        result = agent(prompt)
+        result = executor.submit(agent, prompt).result(timeout=_AGENT_CALL_TIMEOUT_SECONDS)
+    except FuturesTimeoutError:
+        executor.shutdown(wait=False)
+        return {
+            "event_description": request.event_description,
+            "portfolio_holdings": request.portfolio_holdings,
+            "answer": None,
+            "trace": [],
+            "error": f"Investigation timed out after {_AGENT_CALL_TIMEOUT_SECONDS}s without completing.",
+            "note": "The agent call stalled -- likely a slow/unresponsive upstream tool or model call. Try again, or with fewer holdings.",
+            "event_briefing": build_event_briefing(
+                event_description=request.event_description,
+                investigation_status="failed",
+                tiers={},
+                weights={},
+                exposure_classifications={},
+                followup_finding=None,
+            ),
+        }
     except Exception as exc:
+        executor.shutdown(wait=False)
         return {
             "event_description": request.event_description,
             "portfolio_holdings": request.portfolio_holdings,
@@ -469,6 +502,7 @@ def _run_investigation(request: InvestigateRequest) -> dict:
                 followup_finding=None,
             ),
         }
+    executor.shutdown(wait=False)
 
     raw_messages = [m if isinstance(m, dict) else dict(m) for m in agent.messages]
     trace = [_summarize_message(m) for m in raw_messages]
