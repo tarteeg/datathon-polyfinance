@@ -89,6 +89,21 @@ _GENERIC_PROCEDURAL_WORDS = {
     # Register"/"Executive Order", a generic administrative-mechanism phrase, not a
     # specific list/restriction with real consequences.
     "privacy", "matching", "system", "systems", "record", "records", "data",
+    # Confirmed live: "Compensation Programs" -- the recurring "Office of Workers'
+    # Compensation Programs (OWCP)" boilerplate present in nearly every DOL Federal
+    # Register notice -- survived this filter ("programs" was already denylisted,
+    # "compensation" wasn't) and was promoted to a confirmed GOOGL alert for 4
+    # entirely unrelated OWCP paperwork notices (student death benefits, longshore
+    # workers, pneumoconiosis claims), because virtually every 10-K separately
+    # discusses its own "employee/equity compensation programs" in an unrelated
+    # context -- a universal coincidental-word match, not real evidence.
+    "compensation",
+    # Same OWCP boilerplate also extracts as the longer "Office of Workers'
+    # Compensation Programs" -- "office" and "programs" were already denylisted,
+    # but "workers" wasn't, so that longer variant alone would still have survived.
+    # "Workers compensation" is itself a generic benefits/insurance category term,
+    # never a specific fact on its own.
+    "worker", "workers",
 }
 
 
