@@ -62,7 +62,7 @@ class RegulatoryDocumentsResult:
 
 def search_documents(
     *,
-    term: str,
+    term: str = "",
     agency_slugs: list[str] | None = None,
     per_page: int = 20,
     client: httpx.Client | None = None,
@@ -70,13 +70,18 @@ def search_documents(
     """Search Federal Register publications by keyword and (optionally) agency.
 
     Used to detect new/changed regulatory events relevant to a sector or jurisdiction,
-    e.g. term="semiconductor export" + agency_slugs=[BIS_AGENCY_SLUG].
+    e.g. term="semiconductor export" + agency_slugs=[BIS_AGENCY_SLUG]. An empty/falsy
+    `term` omits the keyword condition entirely rather than sending a literal empty
+    string to the API -- confirmed live this still returns real, current documents
+    (the newest ones across every agency), which is what `search_documents_broad`
+    relies on for topic-agnostic coverage.
     """
     params: dict[str, object] = {
-        "conditions[term]": term,
         "per_page": per_page,
         "order": "newest",
     }
+    if term:
+        params["conditions[term]"] = term
     if agency_slugs:
         params["conditions[agencies][]"] = agency_slugs
 
@@ -113,6 +118,28 @@ def search_documents(
         license_or_restriction="U.S. government public domain publication; official and free, no API key required.",
     )
     return RegulatoryDocumentsResult(documents=documents, metadata=metadata)
+
+
+def search_documents_broad(
+    *,
+    per_page: int = 40,
+    client: httpx.Client | None = None,
+) -> RegulatoryDocumentsResult:
+    """Fetch the most recent Federal Register documents across EVERY agency/topic --
+    no keyword term, no agency filter. `DEFAULT_REGULATORY_SEARCH_TERMS` (and
+    `search_documents_multi`, which still exists unchanged for any caller that wants
+    topic-scoped search) only ever look for semiconductor/export-control-flavored
+    phrases, so a real regulatory action in an unrelated domain (an FDA recall rule,
+    an FTC antitrust action, a DOL labor rule, an EPA rule unrelated to critical
+    minerals) was never even fetched, regardless of how good downstream relevance-
+    matching is. This is the fix: cast the widest real net the API allows (bounded by
+    `per_page`, not a topic filter) and let the existing evidence-gated relevance
+    check (`alerts.relevance.check_relevance`) and Stage-2 verification
+    (`alerts.verification.classify_match`) -- both already proven to correctly reject
+    irrelevant documents -- do the actual filtering, instead of pre-filtering by topic
+    keyword before anything downstream ever sees it.
+    """
+    return search_documents(per_page=per_page, client=client)
 
 
 def search_documents_multi(

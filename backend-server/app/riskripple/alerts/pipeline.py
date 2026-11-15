@@ -34,6 +34,48 @@ from app.riskripple.tools.exposure_tools import load_company_graph
 # see alerts.verification.classify_match.
 _ALERT_WORTHY_CLASSIFICATIONS = {"verified_fact", "evidence_supported_hypothesis"}
 
+
+def _consolidate_matches_by_symbol(matches: list[RelevanceMatch]) -> list[RelevanceMatch]:
+    """`check_relevance` can return more than one RelevanceMatch for the same symbol
+    against the same document -- e.g. one "direct" match (the company's own name
+    found in the text) and a separate "supply_chain" match (a generic candidate term
+    also found) -- because they come from different graph nodes and are deduplicated
+    independently per relationship type. Left unconsolidated, each gets classified on
+    its own and can produce contradictory verdicts for the same (document, symbol)
+    pair (confirmed live: one classified `unverified_possibility`/not confirmed, the
+    other `evidence_supported_hypothesis`/confirmed, for the identical article and
+    company). Pick exactly one representative match per symbol before classification:
+    a "direct" match wins outright (it already answers "is this about the company"),
+    otherwise prefer a specific-term match (needs_verification=False) over a
+    generic-candidate one, and fold any other matches' evidence into it so no signal
+    is silently dropped.
+    """
+    by_symbol: dict[str, list[RelevanceMatch]] = {}
+    for m in matches:
+        by_symbol.setdefault(m.symbol, []).append(m)
+
+    consolidated: list[RelevanceMatch] = []
+    for symbol, group in by_symbol.items():
+        if len(group) == 1:
+            consolidated.append(group[0])
+            continue
+        direct = next((m for m in group if m.relationship == "direct"), None)
+        primary = direct or next((m for m in group if not m.needs_verification), None) or group[0]
+        others = [m for m in group if m is not primary]
+        if others:
+            extra_entities = ", ".join(dict.fromkeys(m.matched_entity for m in others if m.matched_entity != primary.matched_entity))
+            extra_snippets = " | ".join(dict.fromkeys(m.evidence_snippet for m in others if m.evidence_snippet != primary.evidence_snippet))
+            primary = RelevanceMatch(
+                symbol=primary.symbol,
+                relationship=primary.relationship,
+                node_id=primary.node_id,
+                matched_entity=primary.matched_entity + (f" (also: {extra_entities})" if extra_entities else ""),
+                evidence_snippet=primary.evidence_snippet + (f" | Additional evidence: {extra_snippets}" if extra_snippets else ""),
+                needs_verification=primary.needs_verification,
+            )
+        consolidated.append(primary)
+    return consolidated
+
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", os.environ.get("AWS_REGION", "us-east-1"))
 
@@ -195,6 +237,7 @@ def run_alert_scan(
             matches = check_relevance(doc_text, graph_json, symbols)
             if not matches:
                 continue  # genuinely not relevant to this user's holdings -- correctly suppressed
+            matches = _consolidate_matches_by_symbol(matches)
 
             doc_key = doc.get("document_number") or doc.get("title", "")
             if deduplicate:
@@ -208,7 +251,12 @@ def run_alert_scan(
             recommendations = []
             for m in matches:
                 verdict = classify_match(
-                    client, document_title=doc.get("title", ""), match=m, industry=industries.get(m.symbol)
+                    client,
+                    document_title=doc.get("title", ""),
+                    match=m,
+                    industry=industries.get(m.symbol),
+                    document_source=doc.get("source", "regulatory"),
+                    document_text=doc_text,
                 )
                 classification = verdict["classification"]
                 if classification == "dismissed_insufficient_evidence":
@@ -216,6 +264,22 @@ def run_alert_scan(
                     # exact false-positive failure mode Stage 2 exists to catch.
                     # Dropped before spending a recommendation-generation call.
                     continue
+                # A direct news mention's materiality (classification in
+                # _ALERT_WORTHY_CLASSIFICATIONS) is NOT by itself sufficient to
+                # confirm a portfolio-exposure alert -- confirmed live: 3 real
+                # Jensen-Huang/NVIDIA leadership-crisis stories were reaching
+                # confirmed_alerts on materiality alone. For this specific path
+                # (news + direct), require the stricter classification_tier==5
+                # ("evidence_supported_portfolio_exposure" -- a concrete, quantified
+                # transmission signal, not just a significant event) from
+                # verification._classify_direct_news. Every other path (regulatory
+                # documents, supply-chain/material matches) is unaffected -- those
+                # don't carry a classification_tier field and keep their existing,
+                # unweakened behavior exactly as before.
+                if m.relationship == "direct" and doc.get("source") == "news":
+                    is_confirmed = verdict.get("classification_tier") == 5
+                else:
+                    is_confirmed = classification in _ALERT_WORTHY_CLASSIFICATIONS
                 try:
                     rec_text = _generate_recommendation(
                         client,
@@ -237,8 +301,10 @@ def run_alert_scan(
                         "matched_entity": m.matched_entity,
                         "evidence_snippet": m.evidence_snippet,
                         "classification": classification,
+                        "classification_tier": verdict.get("classification_tier"),
+                        "exposure_mechanism": verdict.get("mechanism"),
                         "verification_reasoning": verdict.get("reasoning"),
-                        "is_confirmed_alert": classification in _ALERT_WORTHY_CLASSIFICATIONS,
+                        "is_confirmed_alert": is_confirmed,
                         "recommendation": rec_text,
                         "recommendation_error": rec_error,
                     }

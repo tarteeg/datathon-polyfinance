@@ -1,6 +1,8 @@
 """Agent 3 (Exposure and Contagion Mapper) tool surface."""
 from __future__ import annotations
 
+import re
+
 from rapidfuzz import fuzz
 from rapidfuzz.utils import default_process
 from strands import tool
@@ -14,6 +16,7 @@ from app.riskripple.graph.company_graph import (
     traverse_relationships,
 )
 from app.riskripple.config import FIXTURES_DIR
+from app.riskripple.ingestion.filings_sec import get_company_title_for_ticker
 from app.riskripple.schemas.models import ExposureEdge
 from app.riskripple.tools.regulatory_tools import retrieve_company_filings, summarize_event_evidence
 from app.riskripple.tools.research_tools import extract_candidate_entities, is_generic_category_term
@@ -30,6 +33,21 @@ from app.riskripple.tools.research_tools import extract_candidate_entities, is_g
 # "found" in every unrelated company's filing regardless of industry carries no
 # signal about this specific event or holding.
 _BOILERPLATE_MATCH_THRESHOLD = 0.75
+
+# Multi-word country/region names -- the phrase-level equivalent of
+# research_tools._GENERIC_CATEGORY_TERMS' single-word country list ("russia",
+# "taiwan", ...). A bare country name alone is geography, not a transmission
+# mechanism, whether it's one word or several -- confirmed live: "United Arab
+# Emirates" (from a real oil-pipe antidumping case) matched NVDA purely on shared
+# geography, no real connection. A closed, enumerable list, not an attempt at general
+# phrase classification -- see the caller's comment for why a blanket "any multi-word
+# phrase needs verification" rule was tried and reverted (it broke "Entity List").
+_GENERIC_GEOGRAPHY_PHRASES = frozenset({
+    "United Arab Emirates", "United Kingdom", "South Korea", "North Korea",
+    "Saudi Arabia", "South Africa", "New Zealand", "Costa Rica", "Sri Lanka",
+    "Hong Kong", "Czech Republic", "Dominican Republic", "El Salvador",
+    "Hong Kong SAR", "Taiwan SAR",
+})
 
 
 def _filter_boilerplate_candidates(candidates: dict[str, list[str]], fixtures_dir) -> dict[str, list[str]]:
@@ -68,6 +86,76 @@ KNOWN_COMPANY_NAMES: dict[str, str] = {
     "GLD": "SPDR Gold Shares",
     "BIL": "SPDR Bloomberg 1-3 Month T-Bill ETF",
 }
+
+# Narrow, curated executive-name -> ticker map for person-to-company resolution (e.g.
+# a news article about "Jensen Huang" should recognize NVDA even if "NVIDIA"/"NVDA"
+# never appears elsewhere in the text). Intentionally small and explicit -- same
+# philosophy as every other alias list in this codebase -- not a general person/entity
+# resolution system. Extend as needed for other held companies' named executives.
+EXECUTIVE_NAME_TO_TICKER: dict[str, str] = {
+    "jensen huang": "NVDA",
+    "lisa su": "AMD",
+    "brian chesky": "ABNB",
+    "satya nadella": "MSFT",
+    "tim cook": "AAPL",
+    "andy jassy": "AMZN",
+}
+
+_DIRECT_MENTION_TITLE_CACHE: dict[str, str | None] = {}
+
+
+def _company_title_word(symbol: str) -> str | None:
+    """The first significant word of `symbol`'s real SEC-registered title (e.g.
+    "AIRBNB" from "AIRBNB INC", "NVIDIA" from "NVIDIA CORP") -- the short form a real
+    news headline actually uses, for any ticker, not just the 8 in the small
+    hand-curated KNOWN_COMPANY_NAMES map. Cached in-process; a lookup failure (offline,
+    unrecognized ticker) caches None so it isn't retried every call in the same run."""
+    if symbol not in _DIRECT_MENTION_TITLE_CACHE:
+        try:
+            title = get_company_title_for_ticker(symbol)
+        except Exception:
+            title = None
+        if title:
+            first_word = title.split()[0]
+            title = first_word if len(first_word) >= 3 else None
+        _DIRECT_MENTION_TITLE_CACHE[symbol] = title
+    return _DIRECT_MENTION_TITLE_CACHE[symbol]
+
+
+def direct_mention_aliases(symbol: str) -> list[str]:
+    """Every alias that counts as `symbol` itself naming its own company: the bare
+    ticker, its known full legal name, its real SEC title's first word, and any
+    executive name mapped to it. Shared by `load_company_graph` (decides whether to
+    add the node) and `alerts.relevance.check_relevance` (re-confirms the match
+    against the node) so they can never disagree about what counts as a direct
+    mention -- confirmed live this split caused a real bug: a node got added for a
+    direct mention, but relevance checking used a narrower alias set (just the bare
+    ticker + KNOWN_COMPANY_NAMES) and silently failed to re-find the same text."""
+    aliases = [symbol]
+    if symbol in KNOWN_COMPANY_NAMES:
+        aliases.append(KNOWN_COMPANY_NAMES[symbol])
+    title_word = _company_title_word(symbol)
+    if title_word:
+        aliases.append(title_word)
+    aliases.extend(name for name, ticker in EXECUTIVE_NAME_TO_TICKER.items() if ticker == symbol)
+    return aliases
+
+
+def _symbol_directly_mentioned(symbol: str, text: str) -> bool:
+    """True if `text` literally names `symbol` itself -- the bare ticker, its known
+    full name, its real SEC title's first word, or a named executive mapped to it.
+    This is a SEPARATE, always-on check from supplier/material/competitor edge
+    extraction (which `strict_materials_only` legitimately gates to avoid the
+    AMD-10-K-mentions-NVIDIA-as-a-competitor false positive) -- recognizing that an
+    article is directly ABOUT a held company is a different, simpler question than
+    "does it reveal a supply-chain relationship," and must not be suppressed by the
+    same flag that guards the latter. Confirmed live: without this, real articles
+    headlined "Prominent NVIDIA investors call for board to contemplate Huang's
+    return" produced zero candidates at all under strict_materials_only, because the
+    only path capable of recognizing "NVIDIA" was the free-form company-name
+    extraction that flag deliberately disables."""
+    aliases = direct_mention_aliases(symbol)
+    return any(re.search(rf"\b{re.escape(alias)}\b", text, re.IGNORECASE) for alias in aliases)
 
 
 @tool
@@ -164,16 +252,47 @@ def load_company_graph(
             # alerts.verification) treats it as an unverified candidate requiring
             # Stage-2 evidence verification, not as alert-worthy supplier evidence
             # on its own -- see research_tools.is_generic_category_term.
+            #
+            # Also applies to multi-word GEOGRAPHY phrases (e.g. "United Arab
+            # Emirates") for the same reason the single-word country list exists --
+            # confirmed live, once the regulatory feed was broadened beyond a narrow
+            # semiconductor/export topic set, a real oil-pipe antidumping case against
+            # the UAE matched NVDA purely because "United Arab Emirates" is a bare
+            # geography phrase, no real connection. An earlier, broader version of
+            # this fix treated EVERY multi-word phrase this way, but that's wrong: a
+            # genuinely specific multi-word term like "Entity List" (the Commerce
+            # Department's real export-control mechanism, deliberately NOT denylisted
+            # earlier today precisely because AMD/NVDA's own 10-Ks substantively
+            # discuss it) was caught by that blanket rule too and incorrectly
+            # downgraded -- confirmed as a real regression and reverted. Geography
+            # phrases are a closed, enumerable category (unlike "any multi-word
+            # phrase"), so a curated denylist is the right, narrow tool here, same
+            # philosophy as the single-word list.
             for edge in candidate_edges:
-                if is_generic_category_term(edge.target):
+                if is_generic_category_term(edge.target) or edge.target in _GENERIC_GEOGRAPHY_PHRASES:
                     edge = edge.model_copy(update={"relationship_type": "generic_candidate"})
                 edges.append(edge)
 
     graph = build_graph(edges)
+
+    # Always-on direct-mention check -- independent of strict_materials_only, which
+    # gates ONLY the supplier/material/competitor edge extraction above, never this.
+    # A held company's own name appearing in the event/article text makes it a node
+    # (and therefore a "direct" match downstream in alerts.relevance.check_relevance)
+    # regardless of whether any supplier edge was found for it.
+    direct_mentions: list[str] = []
+    if event_description:
+        for symbol in portfolio_symbols:
+            if _symbol_directly_mentioned(symbol, event_description):
+                graph.add_node(symbol)
+                direct_mentions.append(symbol)
+
     result = export_graph_json(graph)
     result["industries"] = industries
     if not_found:
         result["symbols_without_filing_evidence"] = not_found
+    if direct_mentions:
+        result["direct_mentions"] = direct_mentions
     return result
 
 

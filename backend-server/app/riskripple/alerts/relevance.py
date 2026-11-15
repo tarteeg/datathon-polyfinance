@@ -17,7 +17,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.riskripple.tools.exposure_tools import KNOWN_COMPANY_NAMES
+from app.riskripple.tools.exposure_tools import direct_mention_aliases
+from app.riskripple.tools.research_tools import is_false_positive_occurrence
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -39,7 +40,17 @@ class RelevanceMatch:
 
 
 def _word_match(alias: str, text: str) -> re.Match | None:
-    return re.search(rf"\b{re.escape(alias)}\b", text, re.IGNORECASE)
+    """Word-boundary, case-insensitive search for `alias` in `text`, skipping any
+    occurrence that's actually part of a known unrelated phrase (e.g. "silicon"
+    inside "Silicon Valley") -- defense-in-depth alongside the candidate-extraction
+    filter in research_tools.py, for the case where a node exists for a legitimate
+    reason but this particular document's only literal mention is the false-positive
+    phrase. A genuine second occurrence of the same word elsewhere in the text is
+    still found."""
+    for match in re.finditer(rf"\b{re.escape(alias)}\b", text, re.IGNORECASE):
+        if not is_false_positive_occurrence(alias, text, match.start(), match.end()):
+            return match
+    return None
 
 
 def _sentence_containing(text: str, match: re.Match) -> str:
@@ -70,9 +81,7 @@ def check_relevance(document_text: str, graph_json: dict, portfolio_symbols: lis
         # the existing small reference table (exposure_tools.KNOWN_COMPANY_NAMES),
         # not a new hardcoded alias list; a ticker with no entry there just falls
         # back to matching on the bare symbol, same as any other graph node.
-        aliases = [node_id]
-        if node_id in portfolio_set and node_id in KNOWN_COMPANY_NAMES:
-            aliases.append(KNOWN_COMPANY_NAMES[node_id])
+        aliases = direct_mention_aliases(node_id) if node_id in portfolio_set else [node_id]
 
         hit, matched_alias = None, None
         for alias in aliases:

@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001324424-26-000008)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1324424/000132442426000008/expe-20251231.htm",
+  "retrieved_at": "2026-11-15T09:43:22.535922Z",
+  "observation_date": null,
+  "publication_date": "2026-02-13",
+  "currency": null,
+  "data_version": "4b456cab5b201744",
+  "content_hash": "4b456cab5b2017447f83d70bff0130c43cb1bf94076619d1175d07dc12feff78",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Transportation Services",
+  "company_name": "Expedia Group, Inc.",
+  "fetched_live": true
+}

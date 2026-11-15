@@ -1,35 +1,38 @@
 "use client";
 
-import { ArrowDownRight, Loader2, Search, Wrench } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useId, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Trace,
-  TraceCollapsible,
-  TraceCollapsibleContent,
-  TraceCollapsibleTrigger,
-  TraceIcon,
-  TraceLine,
-  TraceTitle,
-} from "@/components/ui/trace";
 import { runInvestigation } from "@/server/investigate-actions";
 import type { InvestigateResult } from "@/server/riskripple";
 
-export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) {
+import { FindingsCards } from "./findings-cards";
+
+export type Prefill = { eventDescription: string; tickers: string };
+
+export function InvestigateForm({
+  defaultTickers,
+  prefill,
+  onComplete,
+}: {
+  defaultTickers: string;
+  prefill?: Prefill | null;
+  onComplete?: () => void;
+}) {
   const id = useId();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<InvestigateResult | null>(null);
 
+  // Remount the form when a new prefill arrives (e.g. "Investigate Impact" from a
+  // news article) so the uncontrolled defaultValue inputs below pick it up.
   return (
-    <div className="flex flex-col gap-4">
+    <div key={prefill ? `${prefill.eventDescription}-${prefill.tickers}` : "default"} className="flex flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle>Describe the event</CardTitle>
@@ -51,6 +54,7 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
                 } else {
                   setResult(outcome.data);
                   if (outcome.data.error) setError(outcome.data.error);
+                  else onComplete?.();
                 }
               } catch {
                 setError("Couldn’t reach the investigation agent. Try again.");
@@ -66,6 +70,7 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
                   id={`${id}-event`}
                   name="event_description"
                   rows={3}
+                  defaultValue={prefill?.eventDescription}
                   placeholder="e.g. New export controls restrict advanced semiconductor equipment sales to a major chip-manufacturing hub."
                   required
                 />
@@ -75,7 +80,7 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
                 <Input
                   id={`${id}-tickers`}
                   name="tickers"
-                  defaultValue={defaultTickers}
+                  defaultValue={prefill?.tickers || defaultTickers}
                   placeholder="NVDA, AMD, INTC"
                   required
                 />
@@ -96,77 +101,7 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
             <CardTitle>Findings</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {result.error ? (
-              <p className="text-destructive text-sm">{result.error}</p>
-            ) : (
-              <p className="text-sm whitespace-pre-wrap">{result.answer}</p>
-            )}
-
-            {!!result.trace.length && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Wrench className="size-4" />
-                  Agent trace
-                  <Badge variant="outline">{result.trace.length} messages</Badge>
-                </div>
-                <Trace>
-                  {result.trace.flatMap((message, i) =>
-                    message.content.map((block, j) => {
-                      const key = `${i}-${j}`;
-                      if (block.type === "text") {
-                        if (message.role !== "assistant") return null;
-                        return (
-                          <p key={key} className="text-muted-foreground text-sm">
-                            {block.text}
-                          </p>
-                        );
-                      }
-                      if (block.type === "tool_use") {
-                        return (
-                          <TraceCollapsible key={key}>
-                            <TraceCollapsibleTrigger>
-                              <TraceLine>
-                                <TraceIcon>
-                                  <Wrench />
-                                </TraceIcon>
-                                <TraceTitle>{block.name ?? "tool call"}</TraceTitle>
-                              </TraceLine>
-                            </TraceCollapsibleTrigger>
-                            <TraceCollapsibleContent>
-                              <CodeBlock size="sm">
-                                <CodeBlockContent wrap>{JSON.stringify(block.input ?? {}, null, 2)}</CodeBlockContent>
-                              </CodeBlock>
-                            </TraceCollapsibleContent>
-                          </TraceCollapsible>
-                        );
-                      }
-                      if (block.type === "tool_result") {
-                        const content =
-                          typeof block.content === "string" ? block.content : JSON.stringify(block.content, null, 2);
-                        return (
-                          <TraceCollapsible key={key}>
-                            <TraceCollapsibleTrigger>
-                              <TraceLine status={block.status === "error" ? "error" : undefined}>
-                                <TraceIcon>
-                                  <ArrowDownRight />
-                                </TraceIcon>
-                                <TraceTitle>result{block.status ? ` (${block.status})` : ""}</TraceTitle>
-                              </TraceLine>
-                            </TraceCollapsibleTrigger>
-                            <TraceCollapsibleContent>
-                              <CodeBlock size="sm">
-                                <CodeBlockContent wrap>{content}</CodeBlockContent>
-                              </CodeBlock>
-                            </TraceCollapsibleContent>
-                          </TraceCollapsible>
-                        );
-                      }
-                      return null;
-                    }),
-                  )}
-                </Trace>
-              </div>
-            )}
+            {result.error ? <p className="text-destructive text-sm">{result.error}</p> : <FindingsCards result={result} />}
           </CardContent>
         </Card>
       )}

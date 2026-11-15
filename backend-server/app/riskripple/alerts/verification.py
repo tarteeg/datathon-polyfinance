@@ -56,6 +56,143 @@ classification must be exactly one of:
 Do not choose "evidence_supported_hypothesis" merely because the general topic
 sounds related -- only when the evidence given names something specific."""
 
+# A news article directly naming a held company is NOT automatically a flaggable
+# event the way a regulatory document naming a company is -- a government filing
+# rarely namedrops a company incidentally, but ordinary news routinely does (earnings
+# coverage, analyst notes, a generic "stock moved today" piece) without describing
+# anything a holder would want to be alerted to. This is the real gap broadening the
+# news feed (removing the old keyword pre-filter) would otherwise reopen: without
+# this check, every single article about a held ticker would hit the "direct match"
+# path and become an automatic verified_fact alert. This prompt makes that judgment
+# per article instead, using the same fact-grading discipline as everywhere else in
+# this codebase.
+#
+# Five-level distinction (confirmed live: 3 real Jensen-Huang/NVIDIA leadership-crisis
+# stories were reaching `confirmed_alerts` on materiality alone -- "this is a real,
+# significant event about a company I hold" was being treated as equivalent to
+# "this is evidence-supported portfolio risk exposure," which it is not; a leadership
+# story doesn't by itself establish a quantified economic transmission mechanism the
+# way a SEC filing's own risk-factor disclosure does):
+#   1. article discovered            -> handled upstream, always in `articles`.
+#   2. event reported, not material  -> "dismissed_insufficient_evidence" (routine
+#                                        noise: an earnings beat, a price-target
+#                                        change, a generic "stock moved X%" piece).
+#   3/4. event materially significant to the company, with at most a plausible,
+#        unquantified mechanism named -> "potential_exposure_unquantified". Levels 3
+#        and 4 (no mechanism named vs. a plausible-but-unquantified mechanism named)
+#        are deliberately collapsed into one practical bucket here: both land in
+#        `investigation_candidates`, never `confirmed_alerts`, so the distinction
+#        between them doesn't change any behavior -- only level 5 does.
+#   5. evidence-supported portfolio exposure -> "evidence_supported_portfolio_exposure".
+#      ONLY this level may become a confirmed alert. Requires the article itself to
+#      report a CONCRETE, QUANTIFIED transmission signal tied explicitly to this
+#      event -- e.g. a specific stock-price reaction ("shares fell 12% after...")
+#      explicitly attributed to this event, or an explicit, specific financial/
+#      contractual consequence named in the article (a named dollar impact, a
+#      specific contract loss) -- not just "this is newsworthy and could matter."
+DIRECT_NEWS_VERIFICATION_SYSTEM_PROMPT = """You are RiskRipple AI's news materiality
+and portfolio-exposure classifier. You are given a real news article that is directly
+about a company the user holds (the company's name, ticker, or a named executive
+appears in the article). Two separate questions matter here, and they are NOT the
+same question:
+  (a) Is this a real, materially significant event about the company (a leadership
+      change, a legal action or investigation, a regulatory action, a significant
+      recall or safety issue, a major operational disruption)?
+  (b) Does the article itself report a CONCRETE, QUANTIFIED economic transmission
+      signal tied explicitly to that event -- a specific stock-price reaction
+      ("shares fell 12% following the announcement"), a specific named dollar/
+      contract impact, or an explicit connection to a specific disclosed risk factor?
+
+A "yes" to (a) alone is NOT sufficient for the highest classification. A real,
+significant leadership crisis is still only a potential, unquantified exposure unless
+the article itself names a concrete transmission signal, not just significance.
+
+Respond with exactly one JSON object and nothing else:
+{"classification": "...", "mechanism": "...", "reasoning": "..."}
+
+classification must be exactly one of:
+- "dismissed_insufficient_evidence": routine market commentary, earnings/analyst
+  coverage, or generic stock-movement reporting with no distinct event -- not worth a
+  dedicated alert. An ordinary earnings beat/miss, an analyst price-target change, or
+  a generic "stock rose/fell" article with no further detail belongs here.
+- "potential_exposure_unquantified": a real, materially significant event about this
+  company IS described, and a plausible mechanism for portfolio/business impact may
+  be inferable (e.g. "leadership instability could affect strategic execution"), but
+  the article itself does NOT report a concrete, quantified transmission signal.
+  This is the correct answer for most real, significant news -- including a genuine
+  leadership crisis -- when the article doesn't go further than reporting the event.
+- "evidence_supported_portfolio_exposure": the article itself explicitly reports a
+  concrete, quantified transmission signal tied to this specific event (a stated
+  stock-price move attributed to it, a named dollar/contract impact, or an explicit
+  tie to a specific disclosed risk factor) -- not merely that the event is newsworthy
+  or plausibly important.
+- "unverified_possibility": genuinely too ambiguous to place in the above.
+
+`mechanism` is a short (<=20 word) plain-language description of the specific
+transmission channel you identified (e.g. "leadership instability raising execution
+risk" or "explicit 8% share-price drop attributed to this announcement"), or an empty
+string if classification is dismissed_insufficient_evidence."""
+
+
+def _classify_direct_news(client, *, document_title: str, document_text: str, symbol: str) -> dict:
+    user_text = (
+        f"Article title: {document_title}\n"
+        f"Portfolio holding this article is directly about: {symbol}\n"
+        f"Article text: \"{document_text[:4000]}\"\n\n"
+        "Classify now."
+    )
+    try:
+        response = client.converse(
+            modelId=BEDROCK_MODEL_ID,
+            system=[{"text": DIRECT_NEWS_VERIFICATION_SYSTEM_PROMPT}],
+            messages=[{"role": "user", "content": [{"text": user_text}]}],
+            inferenceConfig={"maxTokens": 200, "temperature": 0.0},
+        )
+        raw = response["output"]["message"]["content"][0]["text"].strip()
+        raw = raw.strip("`").strip()
+        if raw[:4].lower() == "json":
+            raw = raw[4:].strip()
+        parsed = json.loads(raw)
+        news_classification = parsed.get("classification")
+        if news_classification not in {
+            "dismissed_insufficient_evidence",
+            "potential_exposure_unquantified",
+            "evidence_supported_portfolio_exposure",
+            "unverified_possibility",
+        }:
+            news_classification = "unverified_possibility"
+        tier = {
+            "dismissed_insufficient_evidence": 2,
+            "potential_exposure_unquantified": 4,
+            "evidence_supported_portfolio_exposure": 5,
+            "unverified_possibility": 3,
+        }[news_classification]
+        # Map onto the shared VALID_CLASSIFICATIONS vocabulary for backward
+        # compatibility with every other caller/display path in this codebase --
+        # `classification_tier` is the new field that actually gates confirmation
+        # (see pipeline.run_alert_scan), this mapping is for display/reasoning only.
+        display_classification = {
+            "dismissed_insufficient_evidence": "dismissed_insufficient_evidence",
+            "potential_exposure_unquantified": "evidence_supported_hypothesis",
+            "evidence_supported_portfolio_exposure": "verified_fact",
+            "unverified_possibility": "unverified_possibility",
+        }[news_classification]
+        return {
+            "classification": display_classification,
+            "classification_tier": tier,
+            "mechanism": parsed.get("mechanism", ""),
+            "reasoning": parsed.get("reasoning", ""),
+        }
+    except Exception as exc:
+        # Fail closed: an article this check couldn't classify must never silently
+        # become a confirmed alert.
+        return {
+            "classification": "unverified_possibility",
+            "classification_tier": 3,
+            "mechanism": "",
+            "reasoning": f"Direct-news verification call failed ({type(exc).__name__}); treated as unverified rather than fabricating a decision.",
+        }
+
 
 def _heuristic_classification(match: RelevanceMatch) -> str | None:
     """Deterministic, free check: does the filing's own evidence snippet ALSO name a
@@ -84,12 +221,25 @@ def classify_match(
     document_title: str,
     match: RelevanceMatch,
     industry: str | None = None,
+    document_source: str = "regulatory",
+    document_text: str | None = None,
 ) -> dict:
     """Returns {"classification": ..., "reasoning": ...}. `client` is a
     `boto3.client("bedrock-runtime", ...)`, only ever invoked for a match flagged
-    `needs_verification=True` that also fails the free heuristic check below.
+    `needs_verification=True` that also fails the free heuristic check below, or for
+    a "direct" match on a `document_source="news"` document (see
+    `_classify_direct_news`).
+
+    `document_source` distinguishes a regulatory/government filing (where a document
+    directly naming a company is itself inherently significant -- these don't
+    namedrop companies incidentally) from a news article (where a direct mention is
+    routine and needs its own materiality judgment, not an automatic pass).
     """
     if match.relationship == "direct":
+        if document_source == "news":
+            return _classify_direct_news(
+                client, document_title=document_title, document_text=document_text or "", symbol=match.symbol
+            )
         return {"classification": "verified_fact", "reasoning": "The document directly names this holding."}
     if not match.needs_verification:
         return {

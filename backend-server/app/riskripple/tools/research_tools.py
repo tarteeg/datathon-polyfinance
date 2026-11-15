@@ -83,11 +83,25 @@ _GENERIC_PROCEDURAL_WORDS = {
     "guidance", "framework", "initiative", "action", "actions", "plan", "plans",
     "review", "update", "updates", "request", "requirements", "requirement",
     "information", "collection", "extension", "amendment", "amendments",
+    # Confirmed live: "Privacy Act of 1974; Matching Program" survived this filter
+    # (not every word was denylisted) and was promoted to a confirmed alert for both
+    # NVDA and AMD with zero real connection -- same class of bug as "Federal
+    # Register"/"Executive Order", a generic administrative-mechanism phrase, not a
+    # specific list/restriction with real consequences.
+    "privacy", "matching", "system", "systems", "record", "records", "data",
 }
 
 
 def _is_generic_procedural_phrase(candidate: str) -> bool:
-    tokens = [t.lower() for t in candidate.split() if t.lower() not in _CONNECTOR_WORDS]
+    # Confirmed live: "Privacy Act of 1974; Matching Program" survived this check
+    # despite every real word being denylisted, because bare .split() left trailing
+    # punctuation on "1974;" -- a token that's neither a connector nor in the
+    # denylist, so "all tokens denylisted" failed on a stray punctuation artifact,
+    # not a real word. Strip non-alphanumeric characters per token, and skip
+    # pure-digit tokens (a bare year/section number adds no specificity by itself)
+    # the same way connector words are skipped.
+    raw_tokens = [re.sub(r"[^\w]", "", t).lower() for t in candidate.split()]
+    tokens = [t for t in raw_tokens if t and t not in _CONNECTOR_WORDS and not t.isdigit()]
     return bool(tokens) and all(t in _GENERIC_PROCEDURAL_WORDS for t in tokens)
 # Maximally-common phrases with no differentiating signal: every U.S. regulatory
 # document and every U.S. company's 10-K says "United States" constantly, including in
@@ -98,6 +112,33 @@ def _is_generic_procedural_phrase(candidate: str) -> bool:
 # itself a sign of boilerplate, not a real signal). Small, explicit denylist -- same
 # philosophy as KNOWN_SUPPLIER_ALIASES: curated, not a general informativeness model.
 _GENERIC_NOISE_CANDIDATES = {"united states", "u.s.", "united states of america"}
+
+# Confirmed by a real live scoped alert scan: "Federal Communications Commission"
+# survived `_is_generic_procedural_phrase` (because "communications" isn't in that
+# word list) and was treated as a "specific term", firing a confirmed alert pairing
+# an FCC radio-altimeter spectrum rule with TTWO (Take-Two Interactive, a video game
+# publisher) -- a video-game company's 10-K almost certainly mentions the FCC
+# somewhere in generic boilerplate (e.g. device/broadcast compliance disclosures),
+# which tells an investigation nothing about THIS specific rule. Same failure shape
+# as "Federal Register": a regulatory body's own NAME is invoked in near-universal
+# compliance boilerplate across virtually every public company, so a bare agency-name
+# match is not real discriminating evidence on its own -- unlike a substantive,
+# narrative connection to that agency (e.g. Intel's actual CHIPS Act / Department of
+# Commerce equity relationship, which the full /investigate agent can still find via
+# its own deep full-text reads; this denylist only blocks the fast, cheap
+# candidate-matching path a scan uses, not the agent's own reasoning). Curated by
+# full name (not composition rules) because agency identities are a small, stable,
+# enumerable set, not a general vocabulary to approximate.
+_GENERIC_AGENCY_NAMES = {
+    "federal communications commission", "securities and exchange commission",
+    "environmental protection agency", "food and drug administration",
+    "federal trade commission", "internal revenue service",
+    "department of justice", "department of labor", "department of the treasury",
+    "department of energy", "department of transportation",
+    "federal aviation administration", "federal reserve",
+    "federal deposit insurance corporation", "department of commerce",
+    "consumer financial protection bureau", "occupational safety and health administration",
+}
 _CANDIDATE_ENTITY_RE = re.compile(
     r"\b[A-Z][A-Za-z&.\-]*(?:\s+(?:[A-Z][A-Za-z&.\-]*|of|and|for|the|in|on))*\b"
 )
@@ -171,6 +212,21 @@ _GENERIC_CATEGORY_TERMS = frozenset({
 
 _SINGLE_WORD_ALLOWLIST = _SPECIFIC_SINGLE_WORD_TERMS | _GENERIC_CATEGORY_TERMS
 
+# Curated false-positive phrases for an allowlisted term that is also part of a
+# well-known phrase meaning something unrelated -- confirmed live: a real Airbnb/
+# Chesky article mentioning "Silicon Valley" (the place) got "silicon" extracted as
+# a candidate and then treated as unverified material evidence for AMD/NVDA, because
+# "silicon" is in _SPECIFIC_SINGLE_WORD_TERMS and a specific-term match skips Stage-2
+# verification entirely (classify_match treats it as already-real evidence). Same
+# minimal, curated-exclusion philosophy as every other denylist in this file: a
+# short, explicit list of known false-positive phrases per ambiguous term, not a
+# general word-sense disambiguation model. Only covers a term's occurrence when it's
+# immediately followed by the disambiguating word -- a genuine standalone mention of
+# the material elsewhere in the same text is unaffected.
+_AMBIGUOUS_TERM_FALSE_POSITIVE_PHRASES: dict[str, tuple[str, ...]] = {
+    "silicon": ("silicon valley",),
+}
+
 
 def is_generic_category_term(word: str) -> bool:
     """True if `word` (any case) is a generic industry/geography/mechanism category
@@ -178,11 +234,24 @@ def is_generic_category_term(word: str) -> bool:
     return word.lower() in _GENERIC_CATEGORY_TERMS
 
 
+def is_false_positive_occurrence(word: str, text: str, start: int, end: int) -> bool:
+    """True if this specific occurrence of `word` at `text[start:end]` is actually
+    part of a known unrelated phrase (see `_AMBIGUOUS_TERM_FALSE_POSITIVE_PHRASES`),
+    not a real mention of the thing `word` otherwise denotes."""
+    phrases = _AMBIGUOUS_TERM_FALSE_POSITIVE_PHRASES.get(word.lower())
+    if not phrases:
+        return False
+    window = text[start : end + 20].lower()
+    return any(window.startswith(phrase) for phrase in phrases)
+
+
 def _single_word_candidates(text: str, max_candidates: int) -> list[str]:
     seen: dict[str, None] = {}
     for raw_match in _SINGLE_WORD_RE.finditer(text):
         word = raw_match.group(0)
         if word.lower() not in _SINGLE_WORD_ALLOWLIST:
+            continue
+        if is_false_positive_occurrence(word, text, raw_match.start(), raw_match.end()):
             continue
         # Keep the term as it actually appears (preserves case for proper nouns like
         # "Russia"; lowercase common nouns like "titanium" stay lowercase) -- the
@@ -266,6 +335,8 @@ def extract_candidate_entities(text: str, max_candidates: int = 10, *, include_p
         if tokens[0] in _LEADING_NOISE_WORDS:
             continue
         if candidate.lower() in _GENERIC_NOISE_CANDIDATES:
+            continue
+        if candidate.lower() in _GENERIC_AGENCY_NAMES:
             continue
         non_connector_tokens = [t for t in tokens if t.lower() not in _CONNECTOR_WORDS]
         if len(non_connector_tokens) < 2:

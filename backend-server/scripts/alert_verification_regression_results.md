@@ -7,11 +7,11 @@ Real output from `scripts/test_alert_verification_regression.py`, run live again
 
 | Case | Passed | Latency |
 |---|---|---|
-| 1. AMD article, generic 'semiconductor' overlap with AAPL | PASS | 3.26s |
-| 2. Real NVDA/TSMC supplier dependency retained | PASS | 0.07s |
-| 3. AMD/NVIDIA competitor relationship, no price-direction claim | PASS | 3.10s |
-| 4. Generic geography word 'Taiwan' alone is insufficient | PASS | 2.56s |
-| 5. Duplicate scan does not re-alert (dedup table) | PASS | 1.72s |
+| 1. AMD article, generic 'semiconductor' overlap with AAPL | PASS | 3.31s |
+| 2. Real NVDA/TSMC supplier dependency retained | PASS | 0.11s |
+| 3. AMD/NVIDIA competitor relationship, no price-direction claim | PASS | 3.28s |
+| 4. Generic geography word 'Taiwan' alone is insufficient | PASS | 2.57s |
+| 5. Duplicate scan does not re-alert (dedup table) | PASS | 1.74s |
 
 ## Detail
 
@@ -20,7 +20,7 @@ Real output from `scripts/test_alert_verification_regression.py`, run live again
 - Expected: No confirmed alert for AAPL
 - Actual: AAPL matches found: 1, classifications: ['unverified_possibility'], confirmed: 0
 - Passed: True
-- Detail: [{'classification': 'unverified_possibility', 'reasoning': "The document discusses AMD beating earnings estimates, which caused a rally in semiconductor stocks broadly. AAPL is in the Electronic Computers sector and does use semiconductors (including its own Apple Silicon chips), so a general sector sentiment connection is plausible in principle. However, the evidence provided names only AMD specifically and uses the generic term 'semiconductor' — it does not name Apple, any specific Apple supplier, any specific chip or material shared between AMD and AAPL, or any concrete transmission mechanism linking AMD's earnings to AAPL's valuation. The shared trigger word 'semiconductor' is generic, and while AAPL operates in a related space, the evidence given does not establish a specific causal link beyond that generic overlap."}]
+- Detail: [{'classification': 'unverified_possibility', 'reasoning': "The document discusses AMD beating earnings estimates, which triggered a rally in semiconductor stocks broadly. AAPL (Apple) is in the Electronic Computers sector and is a major consumer of semiconductors, so a sector-wide rally could plausibly affect it. However, the evidence given names only AMD specifically and uses the generic term 'semiconductor' — it does not name Apple, any specific Apple supplier, any specific chip Apple uses, or any direct transmission mechanism linking AMD's earnings to AAPL's valuation. The connection remains plausible in principle (sector sentiment spillover) but is not established by the specific evidence provided."}]
 
 ### 2. Real NVDA/TSMC supplier dependency retained
 - Query/case: Taiwan Semiconductor Manufacturing (TSMC) Reports Record Quarterly Revenue on AI Chip Demand
@@ -32,7 +32,7 @@ Real output from `scripts/test_alert_verification_regression.py`, run live again
 ### 3. AMD/NVIDIA competitor relationship, no price-direction claim
 - Query/case: Nvidia Corporation posted strong quarterly results today as demand for artificial intelligence accelerators continued to grow amid robust customer orders.
 - Expected: Competitor relationship recognized; recommendation contains no price-direction language
-- Actual: competitor matches: 1, recommendation: "**AMD – Competitor Monitoring Alert (Simulation/Informational Only)**\n\nNvidia Corporation, a disclosed competitor of AMD in the AI accelerator and GPU market, has reported strong quarterly results driven by demand for artificial intelligence accelerators, per the matched document. Because this is a competitor relationship — not a supplier or material dependency — the existence of this news does not indicate any specific directional outcome for AMD's stock price in either direction. This is worth monitoring as context for AMD's positioning in the AI accelerator space; reviewing AMD's own disclosures, upcoming earnings commentary, and any analyst coverage addressing competitive dynamics in this segment would provide a more complete picture.\n\n*This alert is for simulation and informational purposes only and does not constitute investment advice or a recommendation to take any portfolio action.*"
+- Actual: competitor matches: 1, recommendation: "**AMD – Competitor Activity Alert (Informational Only)**\n\nNvidia Corporation, a disclosed competitor of AMD in the semiconductors space, has reported strong quarterly results driven by demand for AI accelerators, per the matched document. This is a competitor relationship only — the existence of this news and AMD's competitive position with Nvidia is not evidence of any particular directional outcome for AMD's stock, and no such inference should be drawn. It may be worth monitoring further developments in AI accelerator demand trends and reviewing any concentration in the semiconductor sector within the broader portfolio, as well as AMD's own forthcoming disclosures on its AI-related product lines for direct, company-specific context."
 - Passed: True
 
 ### 4. Generic geography word 'Taiwan' alone is insufficient
