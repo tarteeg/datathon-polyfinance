@@ -8,7 +8,7 @@ This repository uses the shadcn `radix-nova` style. The shadcn CLI reports `base
 
 ## Working on the datathon dashboard
 
-- Start in `src/app/(main)/dashboard/`. The default route, `home/`, contains the portfolio, news, and sector rankings. The stock chart and related articles live in `stock/[ticker]/`. Use the CRM, Finance, and Analytics example pages for layout ideas.
+- Start in `src/app/(main)/dashboard/`. The default route, `home/`, contains the portfolio, news, and sector rankings. The stock chart and related articles live in `stock/[ticker]/`.
 - Reuse `_components/stock-picker.tsx` for symbol selection and the portfolio dialogs under `_components/sidebar/` for holdings. Home and the stock detail page share news components from `stock/[ticker]/_components/`. Both settings entry points use `_components/header/settings-dialog.tsx`.
 - Better Auth handles sign-in. In portfolio reads and writes, derive the user ID from the server session and scope the Aurora PostgreSQL query to that user. See `src/server/portfolio.ts`. A user can save a stock without specifying how many shares they own.
 - Fetch quotes, news, and rankings from FastAPI using the server-side `BACKEND_API_URL`. Follow `src/server/stock-history.ts` for stock history. For first-time database setup and migrations, follow [the dashboard README](README.md#run-locally).
@@ -75,7 +75,7 @@ Keep a component inside its route until it is reused by another feature. Do not 
 
 ## Creating or extending a screen
 
-1. Inspect the closest current screen before writing code. Finance, Infrastructure, CRM, and Analytics are useful references. Do not use routes under `(legacy)` as references for new screens unless maintaining a legacy route.
+1. Inspect the closest current screen before writing code. `home/` and `stock/[ticker]/` are the closest references. Do not use routes under `(legacy)` as references for new screens unless maintaining a legacy route.
 2. When reproducing a UI from a screenshot or image, follow its visual direction closely, including layout, hierarchy, spacing, component structure, and important details. Implement it with the project's existing components and semantic theme tokens rather than copying raw color values. If the design needs a color that is not available through the existing theme tokens, or the user explicitly requests a non-theme color, use a named color from Tailwind's default palette. Do not use arbitrary hex, RGB, HSL, or OKLCH values.
 3. Reuse the existing dashboard shell, local components, layout controls, and theme tokens.
 4. Break each new page into focused components inside the route's `_components/` directory. Keep `page.tsx` small and focused on composing those pieces.

@@ -9,7 +9,7 @@ I forked [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard
 - Open Finance chat in the sidebar for general finance Q&A. Expand Finance chat in the sidebar to start a chat or search saved threads grouped by date. Each thread has a link you can reopen.
 - Click your name in the sidebar or the settings button in the header to change your name, password, or dashboard preferences.
 
-The other dashboards, including CRM, Finance, and Analytics, are examples from Studio Admin. We can borrow layouts and components from them during the datathon, then remove the example pages we no longer need.
+The Studio Admin example dashboards and pages (CRM, Finance, Analytics, Kanban, Mail and others) have been removed. Only `home`, `chat` and `stock/[ticker]` remain under `src/app/(main)/dashboard/`.
 
 See [how the dashboard, API, and database work together](../ARCHITECTURE.md).
 

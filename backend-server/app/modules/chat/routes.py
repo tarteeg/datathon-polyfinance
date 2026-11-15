@@ -17,6 +17,8 @@ from app.modules.chat.stock import STOCK_TOOL, StockQuery, lookup_stock, stock_s
 from app.modules.chat.portfolio import PORTFOLIO_TOOL, Holding, PortfolioQuery, portfolio_snapshot
 from app.modules.chat.news import NEWS_TOOL, NewsQuery, search_news, source_list
 from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANALYSIS_TOOLS, run_analysis_tool
+from app.modules.verification.ledger import EvidenceLedger
+from app.modules.verification.step import verification_activity, verification_started
 
 router = APIRouter()
 
@@ -124,6 +126,7 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
     searches = []
     rankings = []
     portfolio = None
+    ledger = EvidenceLedger()
     # Calculation answers carry before/after tables; 800 tokens cut them off mid-table.
     args = dict(modelId=model, messages=messages, system=system, inferenceConfig={"maxTokens": 2000})
     try:
@@ -211,6 +214,7 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                         news = {"queries": [r["query"] for r in searches], "retrieved": searches[-1]["retrieved"],
                                 "stories": list(stories.values())}
                     evidence.append({"StocksFeed sources in citation order": news})
+                ledger.record(call["toolUseId"], call["name"], status, call["input"], evidence)
                 if streaming:
                     yield {"activity": {**step, "status": status}}
                 results.append({"toolResult": {"toolUseId": call["toolUseId"], "content": [{"text": json.dumps(evidence)}]}})
@@ -221,6 +225,11 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         raise HTTPException(502, "Bedrock could not complete the request.") from error
     if not answer.strip():
         raise HTTPException(502, "Bedrock returned an empty reply.")
+    if streaming:
+        saved = {"chart": request.chart, "previous_stock": request.previous_stock, "previous_news": request.previous_news,
+                 "history": [exchange.model_dump() for exchange in request.history]}
+        yield {"activity": verification_started()}
+        yield {"activity": verification_activity(answer, ledger, question=request.question, references=saved)}
     footer = (source_list(news) if news and news["stories"] else "") + "".join(stock_source(item) for item in stocks)
     for ranking in rankings:
         footer += f"\n\nStocksFeed · {ranking['sector'] or 'All sectors'} · Last {ranking['hours']} hours · {ranking['asOf']}"
