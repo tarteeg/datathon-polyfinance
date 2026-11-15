@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from app.riskripple.tools.exposure_tools import KNOWN_COMPANY_NAMES
+from app.riskripple.tools.exposure_tools import direct_mention_aliases
 from app.riskripple.tools.research_tools import is_false_positive_occurrence
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
@@ -81,9 +81,7 @@ def check_relevance(document_text: str, graph_json: dict, portfolio_symbols: lis
         # the existing small reference table (exposure_tools.KNOWN_COMPANY_NAMES),
         # not a new hardcoded alias list; a ticker with no entry there just falls
         # back to matching on the bare symbol, same as any other graph node.
-        aliases = [node_id]
-        if node_id in portfolio_set and node_id in KNOWN_COMPANY_NAMES:
-            aliases.append(KNOWN_COMPANY_NAMES[node_id])
+        aliases = direct_mention_aliases(node_id) if node_id in portfolio_set else [node_id]
 
         hit, matched_alias = None, None
         for alias in aliases:

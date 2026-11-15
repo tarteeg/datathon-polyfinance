@@ -458,44 +458,123 @@ def alerts_scan(request: AlertScanRequest):
 
 
 class AlertScanNewsRequest(BaseModel):
-    limit_per_ticker: int = 5
+    # Raised from 5: confirmed live that 5 hid most of a ticker's real coverage
+    # (e.g. the entire NVIDIA CEO-departure story). 10 is a deliberate middle ground,
+    # not the max tested -- confirmed live that 20/ticker across 3 tickers pushed a
+    # single synchronous scan past 150s once the direct-mention fix (below) started
+    # correctly routing far more real articles through Stage-2 Bedrock verification.
+    # This endpoint runs synchronously per request; real further coverage increases
+    # need an async/background scan architecture, not just a higher number here --
+    # noted as a follow-up, not solved in this pass.
+    limit_per_ticker: int = 10
     # Same scoping as AlertScanRequest -- see _resolve_portfolios.
     portfolio_holdings: list[str] | None = None
     user_id: str | None = None
 
 
+def _article_summary(doc: dict) -> str:
+    text = (doc.get("abstract") or "").strip()
+    if not text:
+        return ""
+    first_sentence = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    return first_sentence[:280]
+
+
 @router.post("/alerts/scan-news")
 def alerts_scan_news(request: AlertScanNewsRequest):
     """Scan a real portfolio's actual held tickers' real recent news (via the app's
-    existing StocksFeed integration), checking each article against EVERY holding
-    in the portfolio (not just the ticker the article was fetched for) -- a news
-    item about one holding can be a real trickle-down risk to another via the same
-    evidence-gated exposure graph `/alerts/scan` already uses for regulatory
-    documents. Reuses that exact same relevance/recommendation pipeline; only the
-    document source differs. Pass `portfolio_holdings` (and ideally `user_id`) to
-    scope to one caller's real holdings; omit both to scan every real user's real
-    portfolio instead.
+    existing StocksFeed integration). Returns THREE distinct tiers, per the product
+    requirement that news visibility never depend on the confirmed-alert threshold:
 
-    Articles are no longer pre-filtered by topic keyword (an earlier version only
-    passed through ones mentioning trade/export/sanctions terms, which silently
-    dropped real non-trade news like a CEO change or a lawsuit about a held company).
-    Instead, a "direct" match -- an article literally about a held ticker, which is
-    the common case here since StocksFeed already fetches per ticker -- is routed
-    through a dedicated materiality check (`alerts.verification`'s direct-news path)
-    that judges THIS article specifically, rather than filtering by keyword before
-    anything reads it.
+    - `articles`: every real, deduplicated article found for a held ticker --
+      headline, publisher URL, date, ticker, a short factual one-line summary --
+      regardless of whether it became a candidate or an alert. Never empty just
+      because nothing was confirmed; only empty if there's genuinely no real news.
+    - `investigation_candidates`: articles with a real entity/relationship match
+      (direct mention or a supply-chain/material link) that did NOT clear Stage-2
+      verification as alert-worthy -- plausible, not confirmed.
+    - `confirmed_alerts`: the existing strict, evidence-gated tier, unchanged in
+      rigor, each carrying a `source: "news"` marker (never upgraded to the filing
+      path's `verified_fact` confidence language merely for being news-sourced).
+
+    `alerts` (the prior flat shape) is also still returned for backward compatibility
+    with existing callers/tests.
+
+    A direct mention (the article literally names a held company, by ticker, company
+    name, or a named executive) makes an article ELIGIBLE for `articles` and
+    `investigation_candidates` -- it does NOT by itself create a confirmed alert;
+    that still requires clearing the same Stage-2 materiality/evidence check as
+    before. See `exposure_tools.load_company_graph`'s always-on direct-mention check
+    (separate from the `strict_materials_only`-gated supplier/competitor extraction)
+    for why this used to silently drop the biggest real stories about a holding --
+    confirmed live, an NVIDIA CEO-departure story produced zero candidates at all
+    before this fix, not because it was judged irrelevant, but because it was never
+    even considered.
     """
     portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
     if not portfolios:
-        return {"articles_scanned": 0, "portfolios_checked": 0, "alerts": []}
+        return {
+            "articles_scanned": 0, "portfolios_checked": 0, "alerts": [],
+            "articles": [], "investigation_candidates": [], "confirmed_alerts": [],
+            "diagnostics": {"per_ticker": {}, "error": None},
+        }
 
     all_tickers = sorted({ticker for symbols in portfolios.values() for ticker in symbols})
     try:
-        documents = news_stocksfeed.fetch_news_documents_for_tickers(
+        documents, per_ticker_diag = news_stocksfeed.fetch_news_documents_for_tickers_diagnostic(
             all_tickers, limit_per_ticker=request.limit_per_ticker
         )
     except Exception as exc:
+        # A total, unexpected failure (not an individual ticker's StocksFeedError,
+        # which per_ticker_diag already records per-ticker) -- distinguish this from
+        # a genuine "no news" empty result.
         raise HTTPException(502, f"StocksFeed fetch failed: {exc}") from exc
 
+    failed_tickers = [t for t, d in per_ticker_diag.items() if d["error"]]
+    all_failed = bool(all_tickers) and len(failed_tickers) == len(all_tickers)
+    diagnostics = {
+        "per_ticker": per_ticker_diag,
+        "error": (
+            f"StocksFeed failed for every requested ticker: {', '.join(failed_tickers)}. "
+            "This is a degraded state, not confirmation of 'no news'."
+        ) if all_failed else None,
+    }
+
+    # Tier 1: every real article, regardless of confirmation -- built directly from
+    # the fetched documents, not from run_alert_scan's output, so visibility never
+    # depends on the relevance/verification gate below.
+    articles = [
+        {
+            "title": doc.get("title", ""),
+            "url": doc.get("document_url"),
+            "publication_date": doc.get("publication_date"),
+            "ticker": doc.get("source_ticker"),
+            "summary": _article_summary(doc),
+        }
+        for doc in documents
+    ]
+
     alerts = run_alert_scan(documents=documents, portfolios=portfolios, strict_materials_only=True)
-    return {"articles_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
+
+    investigation_candidates: list[dict] = []
+    confirmed_alerts: list[dict] = []
+    for alert in alerts:
+        for match in alert.get("matches", []):
+            entry = {
+                "title": alert.get("title"),
+                "document_url": alert.get("document_url"),
+                "publication_date": alert.get("publication_date"),
+                "source": "news",
+                **match,
+            }
+            (confirmed_alerts if match.get("is_confirmed_alert") else investigation_candidates).append(entry)
+
+    return {
+        "articles_scanned": len(documents),
+        "portfolios_checked": len(portfolios),
+        "alerts": alerts,
+        "articles": articles,
+        "investigation_candidates": investigation_candidates,
+        "confirmed_alerts": confirmed_alerts,
+        "diagnostics": diagnostics,
+    }

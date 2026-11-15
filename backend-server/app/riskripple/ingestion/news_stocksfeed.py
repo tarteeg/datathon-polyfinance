@@ -56,23 +56,45 @@ def _article_to_document(article: dict, *, source_ticker: str) -> dict:
     }
 
 
-def fetch_news_documents_for_tickers(tickers: list[str], *, limit_per_ticker: int = 5) -> list[dict]:
+def fetch_news_documents_for_tickers(tickers: list[str], *, limit_per_ticker: int = 20) -> list[dict]:
     """Fetches each ticker's recent real news (de-duplicated across callers that pass
     overlapping ticker lists) and returns it as alert-pipeline documents, unfiltered
     by topic -- see the module docstring for why the old trade-signal filter was
     removed. Articles are deduplicated by document_number (the same article can come
     back for more than one ticker query, e.g. a multi-company roundup); the first
     ticker it's seen for is recorded as `source_ticker`.
+
+    Default raised from 5 to 20 -- confirmed live that 5 silently hid most of a real
+    ticker's available coverage (e.g. NVIDIA's entire CEO-departure story only showed
+    up once per-ticker limits were raised).
+    """
+    documents, _diag = fetch_news_documents_for_tickers_diagnostic(tickers, limit_per_ticker=limit_per_ticker)
+    return documents
+
+
+def fetch_news_documents_for_tickers_diagnostic(
+    tickers: list[str], *, limit_per_ticker: int = 20
+) -> tuple[list[dict], dict[str, dict]]:
+    """Same as `fetch_news_documents_for_tickers`, plus a per-ticker diagnostics dict:
+    {ticker: {"raw_count": int, "error": str | None}}. A ticker whose fetch raised is
+    no longer silently skipped (the prior behavior let a StocksFeed outage look
+    identical to "this ticker genuinely has no news") -- its error is recorded here so
+    callers can surface a real degraded-state message instead of a false empty
+    success.
     """
     documents: dict[str, dict] = {}
+    diagnostics: dict[str, dict] = {}
     for ticker in dict.fromkeys(tickers):  # de-dupe while preserving order
         try:
             payload = stocksfeed_service.fetch_articles(
                 {"tickers": ticker, "limit": limit_per_ticker, "only_with_tickers": True}
             )
-        except stocksfeed_service.StocksFeedError:
-            continue  # a single ticker's news being unavailable shouldn't fail the whole scan
-        for article in payload.get("articles", []):
+        except stocksfeed_service.StocksFeedError as exc:
+            diagnostics[ticker] = {"raw_count": 0, "error": f"{type(exc).__name__}: {exc}"}
+            continue
+        articles = payload.get("articles", [])
+        diagnostics[ticker] = {"raw_count": len(articles), "error": None}
+        for article in articles:
             doc = _article_to_document(article, source_ticker=ticker)
             documents.setdefault(doc["document_number"], doc)
-    return list(documents.values())
+    return list(documents.values()), diagnostics

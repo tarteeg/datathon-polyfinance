@@ -154,10 +154,11 @@ _TICKER_TO_CIK_CACHE: dict[str, str] | None = None
 
 
 _TITLE_TO_TICKER_CACHE: dict[str, str] | None = None
+_TICKER_TO_TITLE_CACHE: dict[str, str] | None = None
 
 
 def _load_ticker_maps(client: httpx.Client | None = None) -> None:
-    global _TICKER_TO_CIK_CACHE, _TITLE_TO_TICKER_CACHE
+    global _TICKER_TO_CIK_CACHE, _TITLE_TO_TICKER_CACHE, _TICKER_TO_TITLE_CACHE
     if _TICKER_TO_CIK_CACHE is not None:
         return
     own_client = client is None
@@ -178,6 +179,17 @@ def _load_ticker_maps(client: httpx.Client | None = None) -> None:
     # the wrong company); it only helps when the input is literally the company's
     # registered name or a prefix of it, not an approximate guess.
     _TITLE_TO_TICKER_CACHE = {entry["title"].upper(): entry["ticker"].upper() for entry in payload.values()}
+    _TICKER_TO_TITLE_CACHE = {entry["ticker"].upper(): entry["title"].upper() for entry in payload.values()}
+
+
+def get_company_title_for_ticker(ticker: str, *, client: httpx.Client | None = None) -> str | None:
+    """The real, SEC-registered title for `ticker` (e.g. "AIRBNB INC" for ABNB), used
+    to recognize a company's own name in free text (news headlines) for tickers with
+    no entry in the small hand-curated `KNOWN_COMPANY_NAMES` map -- that map only
+    covers 8 tickers; this covers every real registrant SEC tracks."""
+    _load_ticker_maps(client)
+    assert _TICKER_TO_TITLE_CACHE is not None
+    return _TICKER_TO_TITLE_CACHE.get(ticker.strip().upper())
 
 
 def resolve_cik_for_ticker(ticker: str, *, client: httpx.Client | None = None) -> str | None:
