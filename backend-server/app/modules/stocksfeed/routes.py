@@ -11,6 +11,8 @@ def get_articles(
     tickers: str | None = None,
     sectors: str | None = None,
     sentiment: str | None = None,
+    source: str | None = Query(None, max_length=256),
+    include_sources: bool = False,
     hours: int | None = Query(None, ge=1, le=720),
     only_with_tickers: bool = True,
     limit: int = Query(20, ge=1, le=500),
@@ -18,7 +20,7 @@ def get_articles(
     try:
         return service.fetch_articles({
             "search": search, "tickers": tickers, "sectors": sectors,
-            "sentiment": sentiment, "hours": hours,
+            "sentiment": sentiment, "hours": hours, "source": source, "include_sources": include_sources,
             "only_with_tickers": only_with_tickers, "limit": limit,
         })
     except service.StocksFeedError as exc:

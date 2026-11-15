@@ -19,6 +19,7 @@ export const periodLabels: Record<string, string> = {
 export function PricePanel({
   symbol,
   period,
+  source,
   name,
   market,
   price,
@@ -27,6 +28,7 @@ export function PricePanel({
 }: {
   symbol: string;
   period: string;
+  source: string;
   name?: ReactNode;
   market?: ReactNode;
   price?: ReactNode;
@@ -65,7 +67,7 @@ export function PricePanel({
                 aria-label={label}
                 title={label}
                 aria-current={option === period ? "page" : undefined}
-                href={`/dashboard/stock/${encodeURIComponent(symbol)}?period=${option}`}
+                href={{ pathname: `/dashboard/stock/${encodeURIComponent(symbol)}`, query: source ? { period: option, source } : { period: option } }}
                 className={buttonVariants({
                   size: "sm",
                   variant: option === period ? "default" : "ghost",

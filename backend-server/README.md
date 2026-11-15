@@ -55,6 +55,8 @@ curl 'http://localhost:8000/articles?tickers=NVDA&limit=10'
 curl 'http://localhost:8000/article/your-article-slug'
 ```
 
+For example, `GET /articles?tickers=NVDA&source=Reuters&include_sources=true` returns matching articles plus the available publishers for NVDA. The source filter is applied before the limit.
+
 The list accepts `search`, comma-separated `tickers` and `sectors`, `sentiment`,
 `hours` (1–720), `only_with_tickers` (default true), and `limit` (1–500, default 20).
 A successful lookup with no matches returns an empty list or a null article.

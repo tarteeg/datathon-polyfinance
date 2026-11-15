@@ -14,9 +14,9 @@ export const metadata: Metadata = { title: "Portfolio News" };
 export default async function PortfolioNewsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string; symbol?: string; hours?: string }>;
+  searchParams: Promise<{ scope?: string; symbol?: string; hours?: string; source?: string }>;
 }) {
-  const { scope, symbol, hours } = await searchParams;
+  const { scope, symbol, hours, source } = await searchParams;
   const holdings = await getHoldings();
   const saved = holdings.map((row) => row.ticker);
   const all = scope === "all";
@@ -51,6 +51,7 @@ export default async function PortfolioNewsPage({
             fallback={<Skeleton className="h-36" aria-label="Loading news" role="status" />}
           >
             <StockNews
+              source={typeof source === "string" ? source : ""}
               symbols={symbols}
               hours={hours === "24" ? 24 : undefined}
               preferred={ticker ? [ticker] : saved}

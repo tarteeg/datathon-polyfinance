@@ -57,7 +57,7 @@ Bedrock includes up to three contextual follow-up questions in each new FinanceA
 
 The [stock history fetcher](frontend-dashboard/src/server/stock-history.ts) converts share-class symbols such as `BRK.B` to Yahoo's `BRK-B` and requests the quote with `cache: "no-store"`. The chart reads `history.candles` and uses Unix seconds for time. The latest price comes from `history.ticker.regularMarketPrice`. A missing ticker or period with no market data can return 404. Yahoo rate limiting returns 503.
 
-Portfolio News and stock detail pages request up to 50 articles per feed, or 500 for a 24-hour selection. Both pages filter the loaded articles by publisher and display them in batches of 15.
+Portfolio News and stock detail pages request up to 50 articles per feed, or 500 for a 24-hour selection. Both pages send the selected publisher to FastAPI. StocksFeed applies it before the result limit and returns publisher choices for the other active filters. The dashboard displays matching articles in batches of 15.
 
 Discover fetches the ranking with a 60-second revalidation interval. It uses the quote endpoint separately to display each company's price and daily change. StocksFeed owns article collection and analysis. It stores the publisher’s preview image URL when available. Portfolio News and stock pages load that image directly from the publisher and keep a text-only layout when it is missing or fails to load. To build a datathon-specific news source, start with the [StocksFeed integration](backend-server/app/integrations/stocksfeed/service.py). It is the point where the template makes outbound HTTP requests and checks the returned data. The news routes report upstream failures as HTTP 502.
 

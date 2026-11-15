@@ -8,20 +8,20 @@ import { fetchHistory } from "@/server/stock-history";
 import { StockPriceChart } from "../../../_components/stock-price-chart";
 import { periodLabels, PricePanel } from "./price-panel";
 
-export async function StockHistory({ symbol, period }: { symbol: string; period: string }) {
+export async function StockHistory({ symbol, period, source }: { symbol: string; period: string; source: string }) {
   let history;
   try {
     history = await fetchHistory(symbol, period);
   } catch {
     return (
-      <PricePanel symbol={symbol} period={period}>
+      <PricePanel symbol={symbol} period={period} source={source}>
         <p role="alert">Couldn’t load stock prices. Refresh to try again.</p>
       </PricePanel>
     );
   }
   if (!history)
     return (
-      <PricePanel symbol={symbol} period={period}>
+      <PricePanel symbol={symbol} period={period} source={source}>
         <p>No market data for this period.</p>
       </PricePanel>
     );
@@ -59,6 +59,7 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
 
   return (
     <PricePanel
+      source={source}
       symbol={symbol}
       period={period}
       name={ticker.name}

@@ -1,9 +1,10 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { PricePanel } from "./price-panel";
 
-export function StockHistorySkeleton({ symbol, period }: { symbol: string; period: string }) {
+export function StockHistorySkeleton({ symbol, period, source }: { symbol: string; period: string; source: string }) {
   return (
     <PricePanel
+      source={source}
       symbol={symbol}
       period={period}
       name={<Skeleton className="block h-9 w-44" />}

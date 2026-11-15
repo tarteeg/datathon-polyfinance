@@ -2,7 +2,8 @@
 
 import { formatDistanceStrict } from "date-fns";
 
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -29,21 +30,34 @@ function publisher(article: Article) {
 }
 
 export function NewsArticleList({
+  sourceFilter,
+  sources,
   articles,
   symbols,
   preferred,
   asOf,
 }: {
+  sourceFilter: string;
+  sources: string[];
   articles: Article[];
   symbols?: string[];
   preferred?: string[];
   asOf: number;
 }) {
-  const [sourceFilter, setSourceFilter] = useState("");
+  const router = useRouter();
+  const path = usePathname();
+  const search = useSearchParams();
+  const [pending, startTransition] = useTransition();
   const [limit, setLimit] = useState(pageSize);
-  const sources = [...new Set(articles.map(publisher))].sort((a, b) => a.localeCompare(b));
-  const selected = sources.includes(sourceFilter) ? sourceFilter : "";
-  const filtered = selected ? articles.filter((article) => publisher(article) === selected) : articles;
+  const selected = sources.find((s) => s.toLowerCase() === sourceFilter.trim().toLowerCase()) ?? sourceFilter;
+
+  function selectSource(source: string) {
+    const params = new URLSearchParams(search.toString());
+    if (source) params.set("source", source);
+    else params.delete("source");
+    const query = params.toString();
+    startTransition(() => router.push(query ? `${path}?${query}` : path, { scroll: false }));
+  }
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -52,12 +66,11 @@ export function NewsArticleList({
           <NativeSelect
             aria-label="News source"
             value={selected}
-            onChange={(event) => {
-              setSourceFilter(event.target.value);
-              setLimit(pageSize);
-            }}
+            disabled={pending}
+            onChange={(event) => selectSource(event.target.value)}
           >
             <NativeSelectOption value="">All sources</NativeSelectOption>
+            {selected && !sources.includes(selected) && <NativeSelectOption value={selected}>{selected}</NativeSelectOption>}
             {sources.map((source) => (
               <NativeSelectOption key={source} value={source}>
                 {source}
@@ -66,11 +79,12 @@ export function NewsArticleList({
           </NativeSelect>
         </label>
         <span role="status" className="text-xs text-muted-foreground">
-          {Math.min(limit, filtered.length)} of {filtered.length} {filtered.length === 1 ? "article" : "articles"}
+          {Math.min(limit, articles.length)} of {articles.length} {articles.length === 1 ? "article" : "articles"}
         </span>
       </div>
+      {!articles.length && <p className="text-sm text-muted-foreground">No recent articles match this selection.</p>}
       <ItemGroup className="gap-0 group-data-[view=cards]/news:grid group-data-[view=cards]/news:gap-4 @xl:group-data-[view=cards]/news:grid-cols-2 @4xl:group-data-[view=cards]/news:grid-cols-3">
-        {filtered.slice(0, limit).map((article) => {
+        {articles.slice(0, limit).map((article) => {
           const source = publisher(article);
 
           const related = new Set(article.tickers?.map(normalizeTicker).filter(Boolean));
@@ -139,7 +153,7 @@ export function NewsArticleList({
           );
         })}
       </ItemGroup>
-      {limit < filtered.length && (
+      {limit < articles.length && (
         <Button variant="outline" className="self-center" onClick={() => setLimit(limit + pageSize)}>
           Show more articles
         </Button>
