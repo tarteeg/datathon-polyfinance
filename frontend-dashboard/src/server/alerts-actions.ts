@@ -3,10 +3,12 @@
 import { requireSession } from "@/lib/session";
 import { getHoldings } from "@/server/portfolio";
 import {
+  getInvestigationHistory,
   pollNewsScan,
   pollRegulatoryScan,
   triggerNewsScan,
   triggerRegulatoryScan,
+  type InvestigationHistoryEntry,
   type ScanResponse,
 } from "@/server/riskripple";
 
@@ -61,6 +63,20 @@ export async function pollAlertsScan(): Promise<PollAlertsScanResult> {
   try {
     const [regulatory, news] = await Promise.all([pollRegulatoryScan(user.id), pollNewsScan(user.id)]);
     return { ok: true, data: { news, regulatory } };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export type GetHistoryResult = { ok: true; data: InvestigationHistoryEntry[] } | { ok: false };
+
+/** Previously completed manual investigations for the current user -- the
+ * Investigations page's third category. */
+export async function getHistory(): Promise<GetHistoryResult> {
+  const { user } = await requireSession();
+  try {
+    const data = await getInvestigationHistory(user.id);
+    return { ok: true, data };
   } catch {
     return { ok: false };
   }

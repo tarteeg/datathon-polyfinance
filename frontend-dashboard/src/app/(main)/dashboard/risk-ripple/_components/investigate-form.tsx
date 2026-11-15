@@ -18,9 +18,11 @@ export type Prefill = { eventDescription: string; tickers: string };
 export function InvestigateForm({
   defaultTickers,
   prefill,
+  onComplete,
 }: {
   defaultTickers: string;
   prefill?: Prefill | null;
+  onComplete?: () => void;
 }) {
   const id = useId();
   const [pending, setPending] = useState(false);
@@ -52,6 +54,7 @@ export function InvestigateForm({
                 } else {
                   setResult(outcome.data);
                   if (outcome.data.error) setError(outcome.data.error);
+                  else onComplete?.();
                 }
               } catch {
                 setError("Couldn’t reach the investigation agent. Try again.");

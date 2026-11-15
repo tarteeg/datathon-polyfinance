@@ -57,18 +57,40 @@ export type InvestigateResult = {
   persona_comparison?: PersonaComparison[];
 };
 
-export async function investigate(eventDescription: string, tickers: string[]): Promise<InvestigateResult> {
+export async function investigate(
+  eventDescription: string,
+  tickers: string[],
+  userId?: string,
+): Promise<InvestigateResult> {
   const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
   const response = await fetch(new URL("/riskripple/investigate", backend), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ event_description: eventDescription, portfolio_holdings: tickers }),
+    body: JSON.stringify({ event_description: eventDescription, portfolio_holdings: tickers, user_id: userId }),
     cache: "no-store",
     // The agent can make dozens of tool calls before answering; give it real room.
     signal: AbortSignal.timeout(120000),
   });
   if (!response.ok) throw new Error(`Investigation request failed (${response.status})`);
   return response.json();
+}
+
+export type InvestigationHistoryEntry = {
+  event_description: string;
+  portfolio_holdings: string[];
+  result: InvestigateResult;
+  created_at: string;
+};
+
+export async function getInvestigationHistory(userId: string, limit = 10): Promise<InvestigationHistoryEntry[]> {
+  const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
+  const url = new URL("/riskripple/investigate/history", backend);
+  url.searchParams.set("user_id", userId);
+  url.searchParams.set("limit", String(limit));
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`History request failed (${response.status})`);
+  const data = await response.json();
+  return data.history ?? [];
 }
 
 export type AlertMatch = {

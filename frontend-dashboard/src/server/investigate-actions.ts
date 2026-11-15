@@ -6,7 +6,7 @@ import { investigate, type InvestigateResult } from "@/server/riskripple";
 export type RunInvestigationResult = { ok: true; data: InvestigateResult } | { ok: false; error: string };
 
 export async function runInvestigation(form: FormData): Promise<RunInvestigationResult> {
-  await requireSession();
+  const { user } = await requireSession();
 
   const eventDescription = String(form.get("event_description") ?? "").trim();
   const tickers = String(form.get("tickers") ?? "")
@@ -18,7 +18,7 @@ export async function runInvestigation(form: FormData): Promise<RunInvestigation
   if (!tickers.length) return { ok: false, error: "Enter at least one portfolio ticker." };
 
   try {
-    const data = await investigate(eventDescription, tickers);
+    const data = await investigate(eventDescription, tickers, user.id);
     return { ok: true, data };
   } catch {
     return { ok: false, error: "Couldn’t reach the investigation agent. Try again." };
