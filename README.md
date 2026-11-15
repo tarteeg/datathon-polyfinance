@@ -4,6 +4,8 @@ Projet d'équipe pour le Datathon PolyFinances 2026, proposé avec la Banque Nat
 
 > Le tableau de bord Next.js et l’API FastAPI sont en place. Les fonctionnalités AlphaForge AI décrites dans l’approche prévue restent à développer.
 
+![Page Actualités et intelligence géopolitique de PolyFinances AlphaForge, avec le portefeuille simulé dans la barre latérale et les articles récents classés par priorité](docs/images/news-geopolitical-intelligence.png)
+
 ## Contraintes du défi
 
 - Simulation uniquement : aucune transaction réelle, et l'outil ne se présente pas comme un conseil financier personnalisé.
