@@ -3,10 +3,8 @@ import { cookies } from "next/headers";
 import { Suspense } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { railHeadline } from "@/data/rail-headline";
 import { getHoldings } from "@/server/portfolio";
 
-import { HeadlineImpact } from "../stock/[ticker]/_components/headline-impact";
 import { StockNews } from "../stock/[ticker]/_components/stock-news";
 import { StockNewsLayout } from "../stock/[ticker]/_components/stock-news-layout";
 import { NewsFilters } from "./_components/news-filters";
@@ -26,16 +24,10 @@ export default async function PortfolioNewsPage({
   const equivalent = (s: string) => s.replaceAll(".", "-");
   const symbols = ticker ? [ticker] : all ? undefined : saved;
   const outside = ticker && !all && !saved.some((s) => equivalent(s) === equivalent(ticker));
-  const initialCards = (await cookies()).get("stock_news_view")?.value === "cards";
+  const initialCards = (await cookies()).get("stock_news_view")?.value !== "rows";
   return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-3xl tracking-tight">Portfolio News</h1>
-      <section id="rail-replay" className="grid justify-items-start gap-2 rounded-xl border bg-card p-4">
-        <p className="text-xs text-muted-foreground">Historical replay · August 22, 2024</p>
-        <h2 className="text-lg font-medium">{railHeadline.title}</h2>
-        <HeadlineImpact demo headline={railHeadline} />
-      </section>
-      <NewsFilters key={JSON.stringify([all, ticker])} all={all} ticker={ticker} saved={saved} />
+    <div className="mx-auto flex w-full max-w-[90rem] flex-col gap-5">
+      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Portfolio News</h1>
       <StockNewsLayout
         heading={
           ticker
@@ -44,6 +36,7 @@ export default async function PortfolioNewsPage({
               ? "Market news"
               : "News for your holdings"
         }
+        filters={<NewsFilters all={all} ticker={ticker} saved={saved} />}
         initialCards={initialCards}
       >
         {outside ? (
@@ -55,7 +48,7 @@ export default async function PortfolioNewsPage({
         ) : (
           <Suspense
             key={JSON.stringify([all, symbols])}
-            fallback={<Skeleton className="h-16" aria-label="Loading news" role="status" />}
+            fallback={<Skeleton className="h-36" aria-label="Loading news" role="status" />}
           >
             <StockNews
               symbols={symbols}

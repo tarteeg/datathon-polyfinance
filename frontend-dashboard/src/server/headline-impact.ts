@@ -138,7 +138,6 @@ export async function followHeadline(url: string, replay?: Replay, includeChemtr
     ...result.connections.map((item) => item.ticker + ": " + item.explanation + '\n“' + item.quote + '”'),
     "Article coverage: " + result.source_content_type,
     ...evidence.map((item) => item.text),
-    replay ? "[Reopen the historical replay](/dashboard/portfolio-news#rail-replay)" : "",
     "Question to follow: " + result.question,
   ]
     .filter(Boolean)

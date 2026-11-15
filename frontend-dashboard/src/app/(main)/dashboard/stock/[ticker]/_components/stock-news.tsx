@@ -1,21 +1,6 @@
-import { formatDistanceToNowStrict } from "date-fns";
-import { Info } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
-
-import { type Article, ArticleDialog } from "./article-dialog";
-import { ArticleThumbnail } from "./article-thumbnail";
-
-import { HeadlineImpact } from "./headline-impact";
-
-const sentimentStyles: Record<string, string> = {
-  positive: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  neutral: "bg-blue-500/10 text-blue-700 dark:text-blue-400",
-  negative: "bg-red-500/10 text-red-700 dark:text-red-400",
-};
-
-const normalizeTicker = (ticker: string) => ticker.trim().toUpperCase().replaceAll(".", "-");
+import { ItemDescription } from "@/components/ui/item";
+import type { Article } from "./article-dialog";
+import { NewsArticleList } from "./news-article-list";
 
 export async function StockNews({
   symbols,
@@ -30,9 +15,9 @@ export async function StockNews({
   if (symbols?.length)
     url.searchParams.set(
       "tickers",
-      [...new Set(symbols.flatMap((s) => [s, normalizeTicker(s), s.replace("-", ".")]))].join(","),
+      [...new Set(symbols.flatMap((s) => [s, s.replaceAll(".", "-"), s.replace("-", ".")]))].join(","),
     );
-  url.searchParams.set("limit", hours ? "500" : "10");
+  url.searchParams.set("limit", hours ? "500" : "50");
   if (hours) url.searchParams.set("hours", String(hours));
 
   let articles: Article[];
@@ -46,69 +31,41 @@ export async function StockNews({
 
   if (!articles.length) return <ItemDescription>No recent articles match this selection.</ItemDescription>;
 
-  return (
-    <ItemGroup className="gap-0 group-data-[view=cards]/news:grid group-data-[view=cards]/news:gap-3 md:group-data-[view=cards]/news:grid-cols-2 xl:group-data-[view=cards]/news:grid-cols-3">
-      {Array.from(new Map(articles.map((article) => [article.url, article])).values()).map((article) => {
-        const source = article.source || URL.parse(article.url)?.hostname.replace(/^www\./, "");
+  // The feed also returns article bodies and extraction metadata. Only send fields used by the list and dialogs.
+  const stories = Array.from(new Map(articles.map((article) => [article.url, article])).values(), (article) => {
+    const {
+      url,
+      title,
+      image_url,
+      publish_date,
+      authors,
+      source,
+      tickers,
+      summary,
+      summary_short,
+      summary_bullets,
+      sentiment,
+      sentiment_reasoning,
+      importance_score,
+      importance_reasoning,
+    } = article;
+    return {
+      url,
+      title,
+      image_url,
+      publish_date,
+      authors,
+      source,
+      tickers,
+      summary,
+      summary_short,
+      summary_bullets,
+      sentiment,
+      sentiment_reasoning,
+      importance_score,
+      importance_reasoning,
+    };
+  });
 
-        const related = new Set(article.tickers?.map(normalizeTicker).filter(Boolean));
-        const matched = preferred?.filter((s) => related.has(normalizeTicker(s))) ?? [];
-        const shown = matched.length ? matched : symbols?.length === 1 ? symbols : [...related].slice(0, 1);
-        for (const ticker of shown) related.delete(normalizeTicker(ticker));
-        const published = Date.parse(article.publish_date ?? "");
-        const sentiment = article.sentiment?.trim().toLowerCase();
-        const score = article.importance_score;
-        const impact = score == null ? null : score >= 0.8 ? "High" : score >= 0.5 ? "Medium" : "Low";
-        const badges = (sentiment || impact) && (
-          <div className="mt-1 flex flex-wrap gap-2">
-            {sentiment && (
-              <Badge variant="secondary" className={`capitalize ${sentimentStyles[sentiment] ?? ""}`}>
-                <Info aria-hidden="true" />
-                {sentiment}
-              </Badge>
-            )}
-            {impact && (
-              <Badge variant="secondary">
-                <Info aria-hidden="true" />
-                {impact} Impact
-              </Badge>
-            )}
-          </div>
-        );
-        return (
-          <Item
-            key={article.url}
-            role="listitem"
-            className="group-data-[view=rows]/news:rounded-none group-data-[view=rows]/news:border-0 group-data-[view=rows]/news:border-b group-data-[view=rows]/news:border-border group-data-[view=rows]/news:px-0 group-data-[view=rows]/news:py-4 group-data-[view=rows]/news:last:border-b-0 group-data-[view=cards]/news:items-start group-data-[view=cards]/news:border-border group-data-[view=cards]/news:bg-card group-data-[view=cards]/news:p-4"
-          >
-            {article.image_url && <ArticleThumbnail key={article.image_url} src={article.image_url} />}
-            <ItemContent className="min-w-0 gap-2">
-              <ItemDescription className="flex flex-wrap items-center gap-x-2 text-xs">
-                {Number.isFinite(published) && (
-                  <time dateTime={new Date(published).toISOString()} className="border-r pr-2">
-                    {formatDistanceToNowStrict(published, { addSuffix: true })}
-                  </time>
-                )}
-                {source && <span>{source} ·</span>}
-                <span>
-                  {shown.join(", ")}
-                  {related.size > 0 && ` +${related.size}`}
-                </span>
-              </ItemDescription>
-              <ItemTitle className="block line-clamp-none text-base font-semibold">
-                <ArticleDialog article={article} source={source} badges={badges} />
-              </ItemTitle>
-              {badges}
-              {["https:", "http:"].includes(URL.parse(article.url)?.protocol ?? "") && (
-                <HeadlineImpact headline={{
-                  title: article.title, url: article.url,
-                  published: Number.isFinite(published) ? new Date(published).toISOString().slice(0, 10) : null,
-                }} />
-              )}
-            </ItemContent>
-          </Item>
-        );
-      })}
-    </ItemGroup>
-  );
+  return <NewsArticleList articles={stories} symbols={symbols} preferred={preferred} asOf={Date.now()} />;
 }
