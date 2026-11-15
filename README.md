@@ -1,49 +1,48 @@
-# Datathon PolyFinances 2026 : AlphaForge AI
+# Datathon PolyFinances 2026: AlphaForge AI
 
-Projet d'équipe pour le Datathon PolyFinances 2026, proposé avec la Banque Nationale et propulsé par AWS. Le défi AlphaForge AI demande de concevoir un outil qui utilise l'IA générative, les agents et des données financières publiques pour éclairer une décision d'investissement, selon trois personas fictifs : Prudent, Équilibré et Audacieux.
+Team project for the PolyFinances 2026 Datathon, organized with National Bank and powered by AWS. The AlphaForge AI challenge asks teams to build a tool that uses generative AI, agents, and public financial data to inform an investment decision, based on three fictional personas: Prudent, Balanced, and Bold.
 
-> Le tableau de bord Next.js et l’API FastAPI sont en place. Les fonctionnalités AlphaForge AI décrites dans l’approche prévue restent à développer.
+> The Next.js dashboard and the FastAPI API are in place. The AlphaForge AI features described in the planned approach are still to be built.
 
-![Page Actualités et intelligence géopolitique de PolyFinances AlphaForge, avec le portefeuille simulé dans la barre latérale et les articles récents classés par priorité](docs/images/news-geopolitical-intelligence.png)
+![PolyFinances AlphaForge News & Geopolitical Intelligence page, with the simulated portfolio in the sidebar and recent articles ranked by priority](docs/images/news-geopolitical-intelligence.png)
 
-## Contraintes du défi
+## Challenge constraints
 
-- Simulation uniquement : aucune transaction réelle, et l'outil ne se présente pas comme un conseil financier personnalisé.
-- Démarche avant performance : le jury valorise une démarche crédible et bien démontrée, pas le meilleur rendement passé.
-- Traçabilité : chaque donnée cite sa source, sa date et sa devise, et on distingue faits, hypothèses et scénarios.
+- Simulation only: no real transactions, and the tool does not present itself as personalized financial advice.
+- Process over performance: the jury rewards a credible, well-demonstrated process, not the best past return.
+- Traceability: every data point cites its source, date, and currency, and facts, assumptions, and scenarios are kept distinct.
 
-L'énoncé officiel fait foi et peut être précisé par les organisateurs sur place.
+The official challenge statement is authoritative and may be clarified by the organizers on site.
 
-## Approche prévue
+## Planned approach
 
-Le code calcule, le modèle explique. Rendements, volatilité et corrélations sont calculés avec pandas, puis un modèle de langage les met en contexte à partir de ces chiffres. On utilise les prix ajustés (`adj_close`) et on évite le biais d'anticipation (dates de publication plutôt que dates de fin de trimestre). La décision précise à éclairer et la comparaison de deux personas restent à définir.
+The code computes, the model explains. Returns, volatility, and correlations are computed with pandas, then a language model puts them in context using those figures. We use adjusted prices (`adj_close`) and avoid look-ahead bias (publication dates rather than quarter-end dates). The exact decision to inform and the comparison of two personas are still to be defined.
 
-## Pile technique envisagée
+## Envisioned tech stack
 
-- Amazon Bedrock pour appeler les modèles (région de Montréal disponible)
-- Strands Agents (Python) pour l'agent et ses outils de calcul
-- Amazon SageMaker AI (JupyterLab) ou Kiro pour l'analyse
+- Amazon Bedrock to call models (Montréal region available)
+- Strands Agents (Python) for the agent and its calculation tools
+- Amazon SageMaker AI (JupyterLab) or Kiro for analysis
 - pandas, NumPy, scikit-learn
 
-Le compte AWS d'équipe est activé le 14 novembre 2026 et supprimé le 16 novembre en fin de journée. Le code doit être sur GitHub avant l'expiration.
+The team AWS account is activated on November 14, 2026 and deleted at the end of the day on November 16. The code must be on GitHub before it expires.
 
-## Démarrage
+## Getting started
 
-1. Démarrez le [serveur FastAPI](backend-server/README.md).
-2. Dans un autre terminal, suivez le [guide du tableau de bord](frontend-dashboard/README.md), puis ouvrez [le tableau de bord local](http://localhost:3000) et créez un compte ou connectez-vous.
+1. Start the [FastAPI server](backend-server/README.md).
+2. In another terminal, follow the [dashboard guide](frontend-dashboard/README.md), then open the [local dashboard](http://localhost:3000) and create an account or sign in.
 
-Le tableau de bord, basé sur [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), permet de suivre un portefeuille simulé, de consulter les cours et les actualités d’un titre et de repérer les actions du S&P 500 les plus citées dans les articles des dernières 24 heures. Les paramètres sont accessibles en cliquant sur votre nom dans la barre latérale.
+The dashboard, based on [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), lets you track a simulated portfolio, view a stock's prices and news, and spot the S&P 500 stocks most cited in articles from the last 24 hours. Settings are available by clicking your name in the sidebar.
 
-L’API récupère les cours auprès de Yahoo Finance avec yfinance et les actualités auprès de [StocksFeed](https://stocksfeed.benollomo.com/). Amazon Aurora PostgreSQL conserve les comptes, les sessions et les positions du portefeuille. Consultez le [guide d’architecture](ARCHITECTURE.md) pour suivre les échanges entre les services.
+The API fetches prices from Yahoo Finance with yfinance and news from [StocksFeed](https://stocksfeed.benollomo.com/). Amazon Aurora PostgreSQL stores accounts, sessions, and portfolio positions. See the [architecture guide](ARCHITECTURE.md) to follow the exchanges between services.
 
-Le [rapport du défi](DATATHON-CHALLENGE-REPORT.fr.md) et les [notes de l’atelier AWS](POLYFINANCES-WORKSHOP.md) documentent le contexte du projet.
+The [challenge report](DATATHON-CHALLENGE-REPORT.md) and the [AWS workshop notes](POLYFINANCES-WORKSHOP.md) document the project context.
 
-## Équipe et licence
+## Team and license
 
-Membres de l'équipe :
+Team members:
 
 - Sami Mostfa
 - Pacifique Uwamukiza
 - Benjamin Ollomo
 - Mohamed Oubagha
-
