@@ -1,13 +1,16 @@
+import { ChevronDown } from "lucide-react";
 import type { Metadata } from "next";
 
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getHoldings } from "@/server/portfolio";
 
+import { AlertsPanel } from "./_components/alerts-panel";
 import { InvestigateForm } from "./_components/investigate-form";
 
 export const metadata: Metadata = {
   title: "Risk Ripple — Trickle-Down Investigation",
   description:
-    "Investigate how a sanctions, export-control, or regulatory event ripples through supplier and material dependencies across your portfolio holdings.",
+    "Automatically checks real regulatory and news sources against your portfolio for genuine trickle-down risk — not investment advice.",
   alternates: {
     canonical: "/dashboard/risk-ripple",
   },
@@ -22,11 +25,22 @@ export default async function Page() {
       <div className="space-y-1">
         <h1 className="text-3xl tracking-tight">Risk Ripple</h1>
         <p className="text-muted-foreground text-sm">
-          Simulation only. Investigate trickle-down exposure to a geopolitical, sanctions, or regulatory event across
-          your portfolio&apos;s supplier and material dependencies — not investment advice.
+          Simulation only, not investment advice. Checks real regulatory filings and news against your actual
+          holdings and surfaces only genuinely evidence-backed connections.
         </p>
       </div>
-      <InvestigateForm defaultTickers={defaultTickers} />
+
+      <AlertsPanel />
+
+      <Collapsible>
+        <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-sm hover:underline">
+          <ChevronDown className="size-4" />
+          Ask about a specific event instead
+        </CollapsibleTrigger>
+        <CollapsibleContent className="mt-2">
+          <InvestigateForm defaultTickers={defaultTickers} />
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

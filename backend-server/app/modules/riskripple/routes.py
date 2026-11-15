@@ -228,15 +228,34 @@ class AlertScanRequest(BaseModel):
     documents: list[AlertScanDocument] | None = None
     search_term: str | None = None
     per_page: int = 10
+    # When given, scans ONLY this caller-supplied portfolio instead of every real
+    # user in the database -- what a "show my dashboard" request needs, as opposed
+    # to the broad every-user sweep a background job would run. `user_id` keys the
+    # dedup table (alerts.db.filter_unseen); pass the real authenticated user's id
+    # so a scoped scan's dedup state doesn't collide with another real user's.
+    portfolio_holdings: list[str] | None = None
+    user_id: str | None = None
+
+
+def _resolve_portfolios(portfolio_holdings: list[str] | None, user_id: str | None) -> dict[str, list[str]]:
+    if portfolio_holdings:
+        return {user_id or "caller": [t.strip().upper() for t in portfolio_holdings if t.strip()]}
+    try:
+        return get_all_portfolios()
+    except Exception as exc:
+        raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
 
 
 @router.post("/alerts/scan")
 def alerts_scan(request: AlertScanRequest):
-    """Scan regulatory/sanctions documents against every real user's real portfolio
-    (from the app's own Postgres `portfolio_holdings` table) and return genuinely
-    relevant alerts with a constrained recommendation for each. If `documents` isn't
-    given, fetches live Federal Register documents (via `search_term`, or the
-    existing broad default net) instead of requiring a caller to supply them.
+    """Scan regulatory/sanctions documents against a real portfolio and return
+    genuinely relevant alerts with a constrained recommendation for each. Pass
+    `portfolio_holdings` (and ideally `user_id`) to scope the scan to one caller's
+    real holdings; omit both to scan every real user's real portfolio from the
+    app's own Postgres `portfolio_holdings` table instead (the background/ops use
+    case). If `documents` isn't given, fetches live Federal Register documents (via
+    `search_term`, or the existing broad default net) instead of requiring a caller
+    to supply them.
     """
     if request.documents:
         documents = [d.model_dump() for d in request.documents]
@@ -250,11 +269,7 @@ def alerts_scan(request: AlertScanRequest):
             raise HTTPException(502, f"Federal Register fetch failed: {exc}") from exc
         documents = _dataclass_list(result.documents)
 
-    try:
-        portfolios = get_all_portfolios()
-    except Exception as exc:
-        raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
-
+    portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
     if not portfolios:
         return {"documents_scanned": len(documents), "portfolios_checked": 0, "alerts": []}
 
@@ -262,32 +277,39 @@ def alerts_scan(request: AlertScanRequest):
     return {"documents_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
 
 
+class AlertScanNewsRequest(BaseModel):
+    limit_per_ticker: int = 5
+    # Same scoping as AlertScanRequest -- see _resolve_portfolios.
+    portfolio_holdings: list[str] | None = None
+    user_id: str | None = None
+
+
 @router.post("/alerts/scan-news")
-def alerts_scan_news(limit_per_ticker: int = Query(5, ge=1, le=20)):
-    """Scan each real user's real portfolio against that SAME portfolio's actual
-    held tickers' real recent news (via the app's existing StocksFeed integration),
-    checking each article against EVERY holding in the portfolio (not just the
-    ticker the article was fetched for) -- a news item about one holding can be a
-    real trickle-down risk to another via the same evidence-gated exposure graph
-    `/alerts/scan` already uses for regulatory documents. Reuses that exact same
-    relevance/recommendation pipeline; only the document source differs.
+def alerts_scan_news(request: AlertScanNewsRequest):
+    """Scan a real portfolio's actual held tickers' real recent news (via the app's
+    existing StocksFeed integration), checking each article against EVERY holding
+    in the portfolio (not just the ticker the article was fetched for) -- a news
+    item about one holding can be a real trickle-down risk to another via the same
+    evidence-gated exposure graph `/alerts/scan` already uses for regulatory
+    documents. Reuses that exact same relevance/recommendation pipeline; only the
+    document source differs. Pass `portfolio_holdings` (and ideally `user_id`) to
+    scope to one caller's real holdings; omit both to scan every real user's real
+    portfolio instead.
 
     Most real news (earnings notes, analyst calls, executive gossip) is not a
     trickle-down risk event, so articles are pre-filtered to ones containing an
     independent trade/export/sanctions/supply-chain signal before being checked --
     see `ingestion.news_stocksfeed._has_trade_signal`.
     """
-    try:
-        portfolios = get_all_portfolios()
-    except Exception as exc:
-        raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
-
+    portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
     if not portfolios:
         return {"articles_scanned": 0, "portfolios_checked": 0, "alerts": []}
 
     all_tickers = sorted({ticker for symbols in portfolios.values() for ticker in symbols})
     try:
-        documents = news_stocksfeed.fetch_news_documents_for_tickers(all_tickers, limit_per_ticker=limit_per_ticker)
+        documents = news_stocksfeed.fetch_news_documents_for_tickers(
+            all_tickers, limit_per_ticker=request.limit_per_ticker
+        )
     except Exception as exc:
         raise HTTPException(502, f"StocksFeed fetch failed: {exc}") from exc
 

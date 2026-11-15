@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001628280-26-037434)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/946581/000162828026037434/ttwo-20260331.htm",
+  "retrieved_at": "2026-11-15T02:05:54.143052Z",
+  "observation_date": null,
+  "publication_date": "2026-05-22",
+  "currency": null,
+  "data_version": "c8c249e5dbdd87e7",
+  "content_hash": "c8c249e5dbdd87e7bbafea07a12c64d3ff528b65cba723fa9bb080ecd1a0271b",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Services-Prepackaged Software",
+  "company_name": "TAKE TWO INTERACTIVE SOFTWARE INC",
+  "fetched_live": true
+}

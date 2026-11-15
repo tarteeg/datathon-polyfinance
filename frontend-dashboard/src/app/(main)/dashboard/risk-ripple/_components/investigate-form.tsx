@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Table, TableCell, TableHead } from "@/components/ui/table";
@@ -126,17 +127,17 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
               <p className="text-destructive text-sm">{result.error}</p>
             ) : (
               <div className="text-sm [&>*+*]:mt-2">
-                <AnswerMarkdown text={result.answer} />
+                <AnswerMarkdown text={result.answer ?? ""} />
               </div>
             )}
 
             {!!result.trace.length && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Wrench className="size-4" />
-                  Agent trace
-                  <Badge variant="outline">{result.trace.length} messages</Badge>
-                </div>
+              <Collapsible className="flex flex-col gap-2">
+                <CollapsibleTrigger className="text-muted-foreground flex items-center gap-2 text-xs hover:underline">
+                  <Wrench className="size-3.5" />
+                  Show how the agent got this ({result.trace.length} steps)
+                </CollapsibleTrigger>
+                <CollapsibleContent>
                 <Trace>
                   {result.trace.flatMap((message, i) =>
                     message.content.map((block, j) => {
@@ -193,7 +194,8 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
                     }),
                   )}
                 </Trace>
-              </div>
+                </CollapsibleContent>
+              </Collapsible>
             )}
           </CardContent>
         </Card>

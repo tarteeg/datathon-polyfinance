@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001559720-26-000004)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1559720/000155972026000004/abnb-20251231.htm",
+  "retrieved_at": "2026-11-15T02:10:50.030378Z",
+  "observation_date": null,
+  "publication_date": "2026-02-12",
+  "currency": null,
+  "data_version": "e091b3f00101af21",
+  "content_hash": "e091b3f00101af21b7af354714feb8d3304e115374f2097bc9de7939aa9ac801",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Services-To Dwellings & Other Buildings",
+  "company_name": "Airbnb, Inc.",
+  "fetched_live": true
+}

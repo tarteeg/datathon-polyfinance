@@ -98,6 +98,33 @@ def _is_generic_procedural_phrase(candidate: str) -> bool:
 # itself a sign of boilerplate, not a real signal). Small, explicit denylist -- same
 # philosophy as KNOWN_SUPPLIER_ALIASES: curated, not a general informativeness model.
 _GENERIC_NOISE_CANDIDATES = {"united states", "u.s.", "united states of america"}
+
+# Confirmed by a real live scoped alert scan: "Federal Communications Commission"
+# survived `_is_generic_procedural_phrase` (because "communications" isn't in that
+# word list) and was treated as a "specific term", firing a confirmed alert pairing
+# an FCC radio-altimeter spectrum rule with TTWO (Take-Two Interactive, a video game
+# publisher) -- a video-game company's 10-K almost certainly mentions the FCC
+# somewhere in generic boilerplate (e.g. device/broadcast compliance disclosures),
+# which tells an investigation nothing about THIS specific rule. Same failure shape
+# as "Federal Register": a regulatory body's own NAME is invoked in near-universal
+# compliance boilerplate across virtually every public company, so a bare agency-name
+# match is not real discriminating evidence on its own -- unlike a substantive,
+# narrative connection to that agency (e.g. Intel's actual CHIPS Act / Department of
+# Commerce equity relationship, which the full /investigate agent can still find via
+# its own deep full-text reads; this denylist only blocks the fast, cheap
+# candidate-matching path a scan uses, not the agent's own reasoning). Curated by
+# full name (not composition rules) because agency identities are a small, stable,
+# enumerable set, not a general vocabulary to approximate.
+_GENERIC_AGENCY_NAMES = {
+    "federal communications commission", "securities and exchange commission",
+    "environmental protection agency", "food and drug administration",
+    "federal trade commission", "internal revenue service",
+    "department of justice", "department of labor", "department of the treasury",
+    "department of energy", "department of transportation",
+    "federal aviation administration", "federal reserve",
+    "federal deposit insurance corporation", "department of commerce",
+    "consumer financial protection bureau", "occupational safety and health administration",
+}
 _CANDIDATE_ENTITY_RE = re.compile(
     r"\b[A-Z][A-Za-z&.\-]*(?:\s+(?:[A-Z][A-Za-z&.\-]*|of|and|for|the|in|on))*\b"
 )
@@ -266,6 +293,8 @@ def extract_candidate_entities(text: str, max_candidates: int = 10, *, include_p
         if tokens[0] in _LEADING_NOISE_WORDS:
             continue
         if candidate.lower() in _GENERIC_NOISE_CANDIDATES:
+            continue
+        if candidate.lower() in _GENERIC_AGENCY_NAMES:
             continue
         non_connector_tokens = [t for t in tokens if t.lower() not in _CONNECTOR_WORDS]
         if len(non_connector_tokens) < 2:
