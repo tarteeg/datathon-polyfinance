@@ -1,51 +1,53 @@
-# Datathon PolyFinances 2026 : AlphaForge AI
+# Datathon PolyFinances 2026: AlphaForge AI
 
-Projet d'équipe pour le Datathon PolyFinances 2026, proposé avec la Banque Nationale et propulsé par AWS. Le défi AlphaForge AI demande de concevoir un outil qui utilise l'IA générative, les agents et des données financières publiques pour éclairer une décision d'investissement, selon trois personas fictifs : Prudent, Équilibré et Audacieux.
+Team project for the PolyFinances 2026 Datathon, organized with National Bank and powered by AWS. The AlphaForge AI challenge asks teams to build a tool that uses generative AI, agents, and public financial data to inform an investment decision, based on three fictional personas: Prudent, Balanced, and Bold.
 
-> Le tableau de bord Next.js, l’API FastAPI, le chat financier et les alertes RiskRipple sont en place. BreakPoint AI est accessible depuis la barre latérale du tableau de bord.
+> The Next.js dashboard, the FastAPI API, the finance chat, and the RiskRipple alerts are in place. BreakPoint AI is available from the dashboard sidebar.
 
-## Pile technique
+![PolyFinances AlphaForge News & Geopolitical Intelligence page, with the simulated portfolio in the sidebar and recent articles ranked by priority](docs/images/news-geopolitical-intelligence.png)
 
-- Frontend : Next.js 16, React 19, TypeScript, Tailwind CSS 4 et shadcn/ui, basé sur Studio Admin. Recharts pour les graphiques et OpenUI pour afficher les réponses du chat.
-- Authentification : Better Auth.
-- Base de données : Amazon Aurora PostgreSQL (comptes, sessions, portefeuilles, historique du chat).
-- Backend : FastAPI et Uvicorn (Python 3.12).
-- IA : Amazon Bedrock (Converse et ConverseStream, base de connaissances pour RiskRipple) et Strands Agents pour les agents RiskRipple.
-- Calcul : pandas, NumPy, SciPy et NetworkX.
-- Données : Yahoo Finance (yfinance), StocksFeed et l'API Valet de la Banque du Canada.
+## Tech stack
 
-Le compte AWS d'équipe est activé le 14 novembre 2026 et supprimé le 16 novembre en fin de journée. Le code doit être sur GitHub avant l'expiration.
+- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS 4, and shadcn/ui, based on Studio Admin. Recharts for charts and OpenUI to render chat replies.
+- Authentication: Better Auth.
+- Database: Amazon Aurora PostgreSQL (accounts, sessions, portfolios, chat history).
+- Backend: FastAPI and Uvicorn (Python 3.12).
+- AI: Amazon Bedrock (Converse and ConverseStream, knowledge base for RiskRipple) and Strands Agents for the RiskRipple agents.
+- Computation: pandas, NumPy, SciPy, and NetworkX.
+- Data: Yahoo Finance (yfinance), StocksFeed, and the Bank of Canada Valet API.
 
-## Guide d'installation
+The team AWS account is activated on November 14, 2026 and deleted at the end of the day on November 16. The code must be on GitHub before it expires.
 
-### Prérequis
+## Installation guide
+
+### Prerequisites
 
 - Git
 - Python 3.12
-- Node.js et npm (version compatible avec Next.js 16)
-- Une base PostgreSQL existante (Amazon Aurora PostgreSQL) et son certificat CA RDS, pour les comptes, sessions, portefeuilles et conversations
-- Un compte AWS avec accès à Amazon Bedrock, pour le chat financier (identifiants AWS ou clé API Bedrock)
-- OpenSSL, pour générer les clés secrètes
+- Node.js and npm (a version compatible with Next.js 16)
+- An existing PostgreSQL database (Amazon Aurora PostgreSQL) and its RDS CA certificate, for accounts, sessions, portfolios, and conversations
+- An AWS account with access to Amazon Bedrock, for the finance chat (AWS credentials or a Bedrock API key)
+- OpenSSL, to generate the secret keys
 
-### 1. Cloner le dépôt
+### 1. Clone the repository
 
 ```sh
-git clone <url-du-depot>
+git clone <repository-url>
 cd datathon-polyfinance
 ```
 
-### 2. Générer les clés partagées
+### 2. Generate the shared keys
 
-Deux valeurs doivent être créées une seule fois :
+Two values must be created once:
 
 ```sh
-openssl rand -hex 32      # CHAT_API_KEY, identique dans les deux applications
-openssl rand -base64 32   # BETTER_AUTH_SECRET, tableau de bord seulement
+openssl rand -hex 32      # CHAT_API_KEY, identical in both applications
+openssl rand -base64 32   # BETTER_AUTH_SECRET, dashboard only
 ```
 
-### 3. Installer le serveur FastAPI
+### 3. Install the FastAPI server
 
-Depuis `backend-server/` :
+From `backend-server/`:
 
 ```sh
 cd backend-server
@@ -55,27 +57,27 @@ python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Renseignez `.env` :
+Fill in `.env`:
 
-| Variable | Rôle |
+| Variable | Purpose |
 | --- | --- |
-| `STOCKSFEED_BASE_URL` | Adresse de l'API StocksFeed (valeur par défaut fournie) |
-| `AWS_REGION`, `BEDROCK_MODEL_ID` | Région et modèle Bedrock utilisés par le chat |
-| `AWS_BEARER_TOKEN_BEDROCK` | Optionnel : clé API Bedrock à la place des identifiants AWS |
-| `CHAT_API_KEY` | Clé partagée avec le tableau de bord |
-| `DATABASE_*` | Mêmes valeurs de connexion que le tableau de bord, requises par les analyses RiskRipple |
+| `STOCKSFEED_BASE_URL` | StocksFeed API address (default value provided) |
+| `AWS_REGION`, `BEDROCK_MODEL_ID` | Bedrock region and model used by the chat |
+| `AWS_BEARER_TOKEN_BEDROCK` | Optional: Bedrock API key instead of AWS credentials |
+| `CHAT_API_KEY` | Key shared with the dashboard |
+| `DATABASE_*` | Same connection values as the dashboard, required by the RiskRipple analyses |
 
-Démarrez le serveur :
+Start the server:
 
 ```sh
 python main.py
 ```
 
-Vérifiez-le avec la [documentation Swagger](http://localhost:8000/docs) ou `curl 'http://localhost:8000/stock/AAPL/history?period=1mo'`.
+Check it with the [Swagger documentation](http://localhost:8000/docs) or `curl 'http://localhost:8000/stock/AAPL/history?period=1mo'`.
 
-### 4. Installer le tableau de bord
+### 4. Install the dashboard
 
-Dans un second terminal, depuis `frontend-dashboard/` :
+In a second terminal, from `frontend-dashboard/`:
 
 ```sh
 cd frontend-dashboard
@@ -83,17 +85,17 @@ npm install
 cp .env.example .env.local
 ```
 
-Renseignez `.env.local` :
+Fill in `.env.local`:
 
-| Variable | Rôle |
+| Variable | Purpose |
 | --- | --- |
-| `BETTER_AUTH_URL` | `http://localhost:3000` en local |
-| `BETTER_AUTH_SECRET` | Secret généré à l'étape 2 |
-| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_CA_CERT` | Connexion à la base PostgreSQL existante |
-| `BACKEND_API_URL` | Adresse du serveur FastAPI, `http://127.0.0.1:8000` |
-| `CHAT_API_KEY` | Même valeur que dans `backend-server/.env` |
+| `BETTER_AUTH_URL` | `http://localhost:3000` locally |
+| `BETTER_AUTH_SECRET` | Secret generated in step 2 |
+| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_CA_CERT` | Connection to the existing PostgreSQL database |
+| `BACKEND_API_URL` | FastAPI server address, `http://127.0.0.1:8000` |
+| `CHAT_API_KEY` | Same value as in `backend-server/.env` |
 
-Sur une base vide, créez les tables, puis démarrez :
+On an empty database, create the tables, then start the dashboard:
 
 ```sh
 npm run auth:migrate
@@ -102,29 +104,28 @@ npm run chat:migrate
 npm run dev
 ```
 
-Ouvrez [le tableau de bord local](http://localhost:3000), créez un compte ou connectez-vous.
+Open the [local dashboard](http://localhost:3000) and create an account or sign in.
 
-Gardez les identifiants dans `.env` et `.env.local`, qui ne doivent pas être versionnés. Pour plus de détails, consultez le [guide du serveur](backend-server/README.md) et le [guide du tableau de bord](frontend-dashboard/README.md).
+Keep credentials in `.env` and `.env.local`, which must not be committed. For more details, see the [server guide](backend-server/README.md) and the [dashboard guide](frontend-dashboard/README.md).
 
-### Dépannage
+### Troubleshooting
 
-- Le chat renvoie une erreur d'authentification : vérifiez que `CHAT_API_KEY` est identique dans les deux fichiers d'environnement, puis redémarrez les deux serveurs.
-- Erreur Bedrock : vérifiez `AWS_REGION`, `BEDROCK_MODEL_ID` et les permissions `bedrock:InvokeModel` et `bedrock:InvokeModelWithResponseStream`.
-- Erreur de connexion à la base : vérifiez le point d'accès en écriture Aurora (sans protocole ni port), le nom de la base et `DATABASE_CA_CERT`.
-- Les cours ou les actualités n'apparaissent pas : le serveur a besoin d'un accès HTTPS sortant vers Yahoo Finance et StocksFeed.
+- The chat returns an authentication error: check that `CHAT_API_KEY` is identical in both environment files, then restart both servers.
+- Bedrock error: check `AWS_REGION`, `BEDROCK_MODEL_ID`, and the `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` permissions.
+- Database connection error: check the Aurora writer endpoint (no protocol or port), the database name, and `DATABASE_CA_CERT`.
+- Prices or news do not appear: the server needs outbound HTTPS access to Yahoo Finance and StocksFeed.
 
-## Fonctionnalités
+## Features
 
-Le tableau de bord, basé sur [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), permet de suivre un portefeuille simulé, de consulter les cours et les actualités d’un titre, de repérer les actions du S&P 500 les plus citées dans les articles des dernières 24 heures et de poser des questions au chat financier. Le chat s'appuie sur Amazon Bedrock, des outils de calcul (exposition sectorielle, concentration, historique de risque, conversion de devises) et une vérification des chiffres de chaque réponse. BreakPoint AI détermine à partir de quelle baisse d’un FNB une limite de perte est atteinte et compare le scénario au recul historique d’un portefeuille SPY/TLT en 2022. Une page RiskRipple analyse l'exposition du portefeuille aux alertes d'actualité et de réglementation. Les paramètres sont accessibles en cliquant sur votre nom dans la barre latérale.
+The dashboard, based on [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), lets you track a simulated portfolio, view a stock's prices and news, spot the S&P 500 stocks most cited in articles from the last 24 hours, and ask questions to the finance chat. The chat relies on Amazon Bedrock, calculation tools (sector exposure, concentration, risk history, currency conversion), and a check of the figures in each reply. BreakPoint AI determines how far an ETF must fall to reach a loss limit and compares the scenario with the historical drawdown of a SPY/TLT portfolio in 2022. A RiskRipple page analyzes the portfolio's exposure to news and regulatory alerts. Settings are available by clicking your name in the sidebar.
 
-L’API récupère les cours auprès de Yahoo Finance avec yfinance et les actualités auprès de [StocksFeed](https://stocksfeed.benollomo.com/). Amazon Aurora PostgreSQL conserve les comptes, les sessions et les positions du portefeuille. Consultez le [guide d’architecture](ARCHITECTURE.md) pour suivre les échanges entre les services.
+The API fetches prices from Yahoo Finance with yfinance and news from [StocksFeed](https://stocksfeed.benollomo.com/). Amazon Aurora PostgreSQL stores accounts, sessions, and portfolio positions. See the [architecture guide](ARCHITECTURE.md) to follow the exchanges between services.
 
-## Équipe et licence
+## Team and license
 
-Membres de l'équipe :
+Team members:
 
 - Sami Mostfa
 - Pacifique Uwamukiza
 - Benjamin Ollomo
 - Mohamed Oubagha
-
