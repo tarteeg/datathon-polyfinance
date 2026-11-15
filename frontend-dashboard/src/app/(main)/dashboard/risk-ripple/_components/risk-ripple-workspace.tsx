@@ -85,7 +85,7 @@ function MatchAccordionItem({ match, keyId }: { match: AlertMatch; keyId: string
         )}
         {match.evidence_snippet && (
           <blockquote className="border-border text-muted-foreground border-l-2 pl-3 text-sm italic">
-            &quot;{match.evidence_snippet}&quot;
+            "{match.evidence_snippet}"
           </blockquote>
         )}
         {match.exposure_mechanism && (
@@ -106,7 +106,7 @@ function AlertsSection({ combined, scanning }: { combined: { confirmed: AlertMat
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldAlert className="size-4" />
-          Portfolio Alerts &amp; Investigations
+          Portfolio Alerts & Investigations
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -287,7 +287,7 @@ function NewsSectionWithAction({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Newspaper className="size-4" />
-          News &amp; Geopolitical Intelligence
+          News & Geopolitical Intelligence
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
