@@ -23,7 +23,7 @@ export default async function StockPage({
   const period = typeof requested === "string" && Object.hasOwn(periodLabels, requested) ? requested : "5d";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[90rem] flex-col gap-7">
       <Suspense key={`${symbol}-${period}`} fallback={<StockHistorySkeleton symbol={symbol} period={period} />}>
         <StockHistory symbol={symbol} period={period} />
       </Suspense>

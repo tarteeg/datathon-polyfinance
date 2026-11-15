@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { useId, useState, useTransition } from "react";
 
@@ -62,8 +63,8 @@ export function HeadlineImpact({ headline, demo = false }: { headline: Headline;
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-auto max-w-full self-start py-1 whitespace-normal">
-          Why does this matter to my portfolio?
+        <Button variant="ghost" size="sm" className="-mr-2 shrink-0" aria-label={`Portfolio impact of ${headline.title}`}>
+          Portfolio impact <ArrowUpRight data-icon="inline-end" />
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">

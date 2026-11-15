@@ -18,6 +18,8 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { updatePortfolioShares } from "@/server/add-portfolio-stock";
 
+const shareCount = new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 });
+
 export function EditShares({
   ticker,
   quantity,
@@ -49,7 +51,12 @@ export function EditShares({
           className={mobile ? "sm:hidden" : "tabular-nums"}
           aria-label={`Edit shares for ${ticker}`}
         >
-          {!mobile && (quantity ?? "Add shares")}
+          {!mobile &&
+            (quantity === null
+              ? "Add shares"
+              : Number(quantity) < 0.0001
+                ? "<0.0001"
+                : shareCount.format(Number(quantity)))}
           <Pencil />
         </Button>
       </DialogTrigger>

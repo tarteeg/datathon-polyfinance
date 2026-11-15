@@ -6,7 +6,7 @@ import { ExplainChartButton } from "./explain-chart-button";
 import { formatCurrency } from "@/lib/utils";
 import { fetchHistory } from "@/server/stock-history";
 import { StockPriceChart } from "../../../_components/stock-price-chart";
-import { PricePanel } from "./price-panel";
+import { periodLabels, PricePanel } from "./price-panel";
 
 export async function StockHistory({ symbol, period }: { symbol: string; period: string }) {
   let history;
@@ -27,20 +27,22 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
     );
 
   const { ticker, candles } = history;
-  const baseline = period === "mtd" ? ticker.priorMonthClose : period === "1d" ? ticker.previousClose : candles[0]?.Close;
-  const change = baseline == null ? null : Number((ticker.regularMarketPrice - baseline).toFixed(2));
-  const tone =
-    change && change > 0
-      ? "text-emerald-700 dark:text-emerald-400"
-      : change && change < 0
-        ? "text-red-700 dark:text-red-400"
-        : "text-muted-foreground";
-  const quote = ticker.currency
-    ? formatCurrency(ticker.regularMarketPrice, { currency: ticker.currency })
-    : ticker.regularMarketPrice;
-  const asOf = ticker.regularMarketTime != null ? new Date(ticker.regularMarketTime * 1000).toISOString() : undefined;
-
   const snapshot = candles.length ? chartSnapshot(symbol, period, history) : null;
+  const baseline =
+    snapshot?.facts.baseline ??
+    (period === "1d" ? ticker.previousClose : period === "mtd" ? ticker.priorMonthClose : null);
+  const change = baseline == null ? null : ticker.regularMarketPrice - baseline;
+  const percent = baseline && change !== null ? (change / baseline) * 100 : null;
+  const tone =
+    change === null || change === 0
+      ? "text-muted-foreground"
+      : change > 0
+        ? "text-emerald-700 dark:text-emerald-400"
+        : "text-red-700 dark:text-red-400";
+  const money = (value: number) =>
+    ticker.currency ? formatCurrency(value, { currency: ticker.currency }) : value.toFixed(2);
+  const asOf = ticker.regularMarketTime != null ? new Date(ticker.regularMarketTime * 1000) : null;
+  const closes = candles.map(({ Close }) => Close);
 
   async function explain() {
     "use server";
@@ -61,23 +63,27 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
       period={period}
       name={ticker.name}
       market={[ticker.exchange, ticker.currency].filter(Boolean).join(" · ")}
+      action={snapshot && <ExplainChartButton explain={explain} />}
       price={
         <>
-          <span className="text-xl" title={asOf && `Regular market price as of ${asOf}`}>
-            {quote}
-          </span>
+          <span className="text-3xl font-semibold tracking-tight sm:text-4xl">{money(ticker.regularMarketPrice)}</span>
           {change !== null && (
-            <span className={tone}>
-              {change > 0 ? "+" : ""}
-              {change.toFixed(2)}
-            </span>
+            <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
+              <span className={`font-semibold ${tone}`}>
+                {change > 0 ? "+" : ""}
+                {change.toFixed(2)}
+                {percent !== null && ` (${percent > 0 ? "+" : ""}${percent.toFixed(2)}%)`}
+              </span>
+              <span className="text-muted-foreground">{periodLabels[period]}</span>
+            </div>
           )}
         </>
       }
     >
-      {candles.length ? (
-        <StockPriceChart symbol={symbol}
-          points={candles.map(({ time, Close }) => ({ time, Close }))}
+      {snapshot ? (
+        <StockPriceChart
+          symbol={symbol}
+          points={snapshot.points}
           period={period}
           currency={ticker.currency}
           tone={tone}
@@ -85,7 +91,43 @@ export async function StockHistory({ symbol, period }: { symbol: string; period:
       ) : (
         <p>No trading activity in this period.</p>
       )}
-      {snapshot && <ExplainChartButton explain={explain} />}
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t pt-4">
+        {closes.length > 0 && (
+          <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {(
+              [
+                ["Lowest close", Math.min(...closes)],
+                ["Highest close", Math.max(...closes)],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="mt-0.5 font-medium tabular-nums">{money(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Yahoo Finance
+          {asOf && (
+            <>
+              {" "}
+              · Quote as of{" "}
+              <time dateTime={asOf.toISOString()}>
+                {asOf.toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  timeZone: "America/New_York",
+                  timeZoneName: "short",
+                })}
+              </time>
+            </>
+          )}
+        </p>
+      </div>
     </PricePanel>
   );
 }

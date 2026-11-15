@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleUserRound, Compass, Settings, SlidersHorizontal } from "lucide-react";
+import { CircleUserRound, Compass, PieChart, Settings, SlidersHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactElement, useState } from "react";
 import { toast } from "sonner";
@@ -16,10 +16,12 @@ import { getInitials } from "@/lib/utils";
 import { ChangePasswordDialog } from "./change-password-dialog";
 import { InvestorPersonaForm } from "./investor-persona-form";
 import { LayoutControls } from "./layout-controls";
+import { SamplePortfolioForm } from "./sample-portfolio-form";
 
 const sections = [
   { title: "Account", icon: CircleUserRound },
   { title: "Investor persona", icon: Compass },
+  { title: "Sample portfolios", icon: PieChart },
   { title: "Preferences", icon: SlidersHorizontal },
 ] as const;
 
@@ -85,6 +87,7 @@ function SettingsPanels({ user }: { user: Profile }) {
               </>
             )}
             {section === "Investor persona" && <InvestorPersonaForm savedPersona={user.investorPersona} />}
+            {section === "Sample portfolios" && <SamplePortfolioForm />}
             {section === "Preferences" && <LayoutControls />}
           </div>
         </div>

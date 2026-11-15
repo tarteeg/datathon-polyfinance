@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { SectorTabs } from "./sector-tabs";
+import { SectorFilter } from "./sector-filter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getHoldings } from "@/server/portfolio";
 import { fetchHistory } from "@/server/stock-history";
@@ -16,7 +16,7 @@ async function DailyPerformance({ ticker }: { ticker: string }) {
 
   const { regularMarketPrice: price, currency, previousClose } = history.ticker;
   const money: Intl.NumberFormatOptions = {
-    ...(currency ? { style: "currency", currency, currencyDisplay: "narrowSymbol" } as const : {}),
+    ...(currency ? ({ style: "currency", currency, currencyDisplay: "narrowSymbol" } as const) : {}),
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   };
@@ -24,15 +24,29 @@ async function DailyPerformance({ ticker }: { ticker: string }) {
 
   return (
     <div className="flex flex-col gap-0.5 tabular-nums">
-      <strong>{price.toLocaleString("en-US", money)} {currency}</strong>
+      <strong>
+        {price.toLocaleString("en-US", money)} {currency}
+      </strong>
       {change !== null && previousClose ? (
-        <span className={change > 0 ? "text-emerald-700 dark:text-emerald-400" : change < 0 ? "text-red-700 dark:text-red-400" : "text-muted-foreground"}>
+        <span
+          className={
+            change > 0
+              ? "text-emerald-700 dark:text-emerald-400"
+              : change < 0
+                ? "text-red-700 dark:text-red-400"
+                : "text-muted-foreground"
+          }
+        >
           {change.toLocaleString("en-US", { ...money, signDisplay: "exceptZero" })}{" "}
           {(change / previousClose).toLocaleString("en-US", {
-            style: "percent", signDisplay: "exceptZero", minimumFractionDigits: 2,
+            style: "percent",
+            signDisplay: "exceptZero",
+            minimumFractionDigits: 2,
           })}
         </span>
-      ) : <span className="text-muted-foreground">—</span>}
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
     </div>
   );
 }
@@ -57,55 +71,68 @@ export async function Discover({ sector }: { sector?: string }) {
   }
   const saved = new Set((await getHoldings()).map((row) => row.ticker));
   return (
-    <section className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <section className="min-w-0 overflow-hidden rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-1">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Discover</p>
-          <h2 className="text-2xl font-semibold tracking-tight">Most-mentioned stocks</h2>
-          <p className="text-sm text-muted-foreground">S&amp;P 500 stocks ranked by distinct news articles in the last 24 hours.</p>
+          <h2 className="text-xl font-semibold tracking-tight">Most-mentioned stocks</h2>
+          <p className="text-sm text-muted-foreground">
+            S&amp;P 500 stocks ranked by distinct news articles in the last 24 hours.
+          </p>
         </div>
+        <SectorFilter sector={sector} sectors={ranking.sectors} />
       </div>
-      <SectorTabs sector={sector} sectors={ranking.sectors}>
-        {ranking.stocks.length ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="hidden w-12 sm:table-cell">#</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Daily performance</TableHead>
-                <TableHead className="text-right"><span className="sr-only">Portfolio</span></TableHead>
+      {ranking.stocks.length ? (
+        <Table aria-label="Most-mentioned stocks">
+          <TableHeader className="bg-muted/20 text-xs">
+            <TableRow>
+              <TableHead className="hidden w-14 pl-6 sm:table-cell">#</TableHead>
+              <TableHead className="pl-4 sm:pl-2">Company</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Articles</TableHead>
+              <TableHead className="text-right">Daily performance</TableHead>
+              <TableHead className="text-right">
+                <span className="sr-only">Portfolio</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ranking.stocks.map((s, i) => (
+              <TableRow key={s.ticker}>
+                <TableCell className="hidden pl-6 text-muted-foreground tabular-nums sm:table-cell">{i + 1}</TableCell>
+                <TableCell className="pl-4 sm:pl-2">
+                  <Link
+                    className="block py-1.5 hover:underline"
+                    href={`/dashboard/stock/${encodeURIComponent(s.ticker)}`}
+                    prefetch={false}
+                  >
+                    <strong>{s.ticker}</strong>
+                    <span className="block max-w-24 truncate text-xs text-muted-foreground sm:max-w-64">{s.name}</span>
+                    <span className="block text-xs text-muted-foreground sm:hidden">
+                      {s.article_count} {s.article_count === 1 ? "article" : "articles"}
+                    </span>
+                  </Link>
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums sm:table-cell">{s.article_count}</TableCell>
+                <TableCell className="text-right">
+                  <Suspense fallback="…">
+                    <DailyPerformance ticker={s.ticker} />
+                  </Suspense>
+                </TableCell>
+                <TableCell className="pr-4 text-right sm:pr-6">
+                  {saved.has(s.ticker) ? (
+                    <span title="In portfolio" className="text-muted-foreground">
+                      ✓<span className="sr-only sm:not-sr-only"> In portfolio</span>
+                    </span>
+                  ) : (
+                    <AddStockDialog sidebar={false} initialTicker={s.ticker} />
+                  )}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ranking.stocks.map((s, i) => (
-                <TableRow key={s.ticker}>
-                  <TableCell className="hidden text-muted-foreground tabular-nums sm:table-cell">{i + 1}</TableCell>
-                  <TableCell>
-                    <Link
-                      className="block py-1.5 hover:underline"
-                      href={`/dashboard/stock/${encodeURIComponent(s.ticker)}`}
-                      prefetch={false}
-                    >
-                      <strong>{s.ticker}</strong>
-                      <span className="block max-w-24 truncate text-xs text-muted-foreground sm:max-w-64">{s.name}</span>
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Suspense fallback="…">
-                      <DailyPerformance ticker={s.ticker} />
-                    </Suspense>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {saved.has(s.ticker) ? <span title="In portfolio" className="text-muted-foreground">✓<span className="sr-only sm:not-sr-only"> In portfolio</span></span> : <AddStockDialog sidebar={false} initialTicker={s.ticker} />}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="text-muted-foreground">No mentions in this sector in the past 24 hours.</p>
-        )}
-      </SectorTabs>
+            ))}
+          </TableBody>
+        </Table>
+      ) : (
+        <p className="p-5 text-sm text-muted-foreground">No mentions in this sector in the past 24 hours.</p>
+      )}
     </section>
   );
 }

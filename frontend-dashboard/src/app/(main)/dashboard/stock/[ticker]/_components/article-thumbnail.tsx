@@ -12,7 +12,7 @@ export function ArticleThumbnail({ src }: { src: string }) {
   return (
     <ItemMedia
       variant="image"
-      className="h-16 w-24 group-data-[view=cards]/news:aspect-video group-data-[view=cards]/news:h-auto group-data-[view=cards]/news:w-full"
+      className="h-14 w-16 sm:h-20 sm:w-28 group-data-[view=cards]/news:h-40 group-data-[view=cards]/news:w-full group-data-[view=cards]/news:rounded-none group-data-[view=cards]/news:translate-y-0"
     >
       <Image
         src={src}
