@@ -39,6 +39,7 @@ export const sidebarItems: NavGroup[] = [
     id: 3,
     items: [
       { id: "home", title: "Home", url: "/dashboard/home", icon: House },
+      { id: "portfolio-news", title: "Portfolio News", url: "/dashboard/portfolio-news", icon: Newspaper },
       { id: "decision-lab", title: "BreakPoint AI", url: "/dashboard/decision-lab", icon: Gauge },
       { id: "chat", title: "Finance chat", url: "/dashboard/chat", icon: MessageSquare },
     ],

@@ -8,8 +8,8 @@ This repository uses the shadcn `radix-nova` style. The shadcn CLI reports `base
 
 ## Working on the datathon dashboard
 
-- Start in `src/app/(main)/dashboard/`. The default route, `home/`, contains the portfolio, news, and sector rankings. The stock chart and related articles live in `stock/[ticker]/`.
-- Reuse `_components/stock-picker.tsx` for symbol selection and the portfolio dialogs under `_components/sidebar/` for holdings. Home and the stock detail page share news components from `stock/[ticker]/_components/`. Both settings entry points use `_components/header/settings-dialog.tsx`.
+- Start in `src/app/(main)/dashboard/`. The default route, `home/`, contains the portfolio and sector rankings. Portfolio News lives in `portfolio-news/`. The stock chart and related articles live in `stock/[ticker]/`.
+- Reuse `_components/stock-picker.tsx` for symbol selection and the portfolio dialogs under `_components/sidebar/` for holdings. Portfolio News and the stock detail page share news components from `stock/[ticker]/_components/`. Both settings entry points use `_components/header/settings-dialog.tsx`.
 - Better Auth handles sign-in. In portfolio reads and writes, derive the user ID from the server session and scope the Aurora PostgreSQL query to that user. See `src/server/portfolio.ts`. A user can save a stock without specifying how many shares they own.
 - Fetch quotes, news, and rankings from FastAPI using the server-side `BACKEND_API_URL`. Follow `src/server/stock-history.ts` for stock history. For first-time database setup and migrations, follow [the dashboard README](README.md#run-locally).
 
