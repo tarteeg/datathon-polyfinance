@@ -685,6 +685,13 @@ def _run_news_scan_background(cache_key: str, portfolios: dict[str, list[str]], 
 def _scan_is_fresh(cached: dict | None) -> bool:
     if not cached or not cached.get("last_success_at"):
         return False
+    # A cache row written by an older backend version (before the current response
+    # shape/classification logic) must never be served as fresh, no matter how
+    # recent -- confirmed live: this exact gap caused a real user to see zero
+    # confirmed alerts the current code would actually find. Time-based freshness
+    # only applies on top of a schema match.
+    if cached.get("schema_version") != alerts_db.CURRENT_SCAN_SCHEMA_VERSION:
+        return False
     from datetime import datetime, timedelta, timezone
 
     success_at = datetime.fromisoformat(cached["last_success_at"])

@@ -83,9 +83,20 @@ CREATE TABLE IF NOT EXISTS riskripple_scan_cache (
     last_success_at TIMESTAMPTZ,
     last_attempt_at TIMESTAMPTZ,
     error_message TEXT,
+    schema_version INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, scan_type)
 );
 """
+
+# Confirmed live (2026-11-15): a cache row written by an older backend version --
+# before the articles/investigation_candidates/confirmed_alerts three-tier shape
+# existed -- was still being served as "fresh" to a real user, showing zero
+# confirmed alerts the current code would actually find, because freshness was
+# only ever time-based. `schema_version` lets a reader detect "this row predates
+# the current response shape" and treat it as stale regardless of its age, without
+# needing to disable caching for genuinely current rows. Bump this whenever the
+# scan response shape or the logic that decides confirmed/candidate changes.
+CURRENT_SCAN_SCHEMA_VERSION = 1
 
 
 def ensure_scan_cache_table() -> None:
@@ -93,6 +104,10 @@ def ensure_scan_cache_table() -> None:
     try:
         cur = conn.cursor()
         cur.execute(_ENSURE_SCAN_CACHE_TABLE_SQL)
+        # ALTER ... ADD COLUMN IF NOT EXISTS for installs where the table already
+        # existed before schema_version was added -- CREATE TABLE IF NOT EXISTS
+        # alone won't retrofit existing tables.
+        cur.execute("ALTER TABLE riskripple_scan_cache ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 0;")
         conn.commit()
     finally:
         conn.close()
@@ -106,20 +121,21 @@ def get_cached_scan(user_id: str, scan_type: str) -> dict | None:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT result_json, status, last_success_at, last_attempt_at, error_message "
+            "SELECT result_json, status, last_success_at, last_attempt_at, error_message, schema_version "
             "FROM riskripple_scan_cache WHERE user_id = %s AND scan_type = %s",
             (user_id, scan_type),
         )
         row = cur.fetchone()
         if not row:
             return None
-        result_json, status, last_success_at, last_attempt_at, error_message = row
+        result_json, status, last_success_at, last_attempt_at, error_message, schema_version = row
         return {
             "result": result_json,
             "status": status,
             "last_success_at": last_success_at.isoformat() if last_success_at else None,
             "last_attempt_at": last_attempt_at.isoformat() if last_attempt_at else None,
             "error_message": error_message,
+            "schema_version": schema_version,
         }
     finally:
         conn.close()
@@ -157,13 +173,14 @@ def save_scan_success(user_id: str, scan_type: str, result: dict) -> None:
         cur.execute(
             """
             INSERT INTO riskripple_scan_cache
-                (user_id, scan_type, result_json, status, last_success_at, last_attempt_at, error_message)
-            VALUES (%s, %s, %s, 'idle', now(), now(), NULL)
+                (user_id, scan_type, result_json, status, last_success_at, last_attempt_at, error_message, schema_version)
+            VALUES (%s, %s, %s, 'idle', now(), now(), NULL, %s)
             ON CONFLICT (user_id, scan_type) DO UPDATE
             SET result_json = EXCLUDED.result_json, status = 'idle',
-                last_success_at = now(), last_attempt_at = now(), error_message = NULL
+                last_success_at = now(), last_attempt_at = now(), error_message = NULL,
+                schema_version = EXCLUDED.schema_version
             """,
-            (user_id, scan_type, _json.dumps(result)),
+            (user_id, scan_type, _json.dumps(result), CURRENT_SCAN_SCHEMA_VERSION),
         )
         conn.commit()
     finally:
