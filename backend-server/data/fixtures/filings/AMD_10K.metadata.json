@@ -7,5 +7,7 @@
   "currency": null,
   "data_version": "33f1050a8d40c284",
   "content_hash": "33f1050a8d40c284431382a6181782ff7353eb265f8d6749c3dd7cf405eb93e0",
-  "license_or_restriction": "U.S. public filing via SEC EDGAR."
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Semiconductors & Related Devices",
+  "company_name": "ADVANCED MICRO DEVICES INC"
 }

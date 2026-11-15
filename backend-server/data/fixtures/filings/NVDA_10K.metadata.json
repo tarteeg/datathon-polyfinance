@@ -7,5 +7,7 @@
   "currency": null,
   "data_version": "7dd1a4a422091eb3",
   "content_hash": "7dd1a4a422091eb32f2715b1427af54bc64df7b6869298bfae40c4ad5fec3349",
-  "license_or_restriction": "U.S. public filing via SEC EDGAR."
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Semiconductors & Related Devices",
+  "company_name": "NVIDIA CORP"
 }

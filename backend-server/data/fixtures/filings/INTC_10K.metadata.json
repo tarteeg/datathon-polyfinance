@@ -7,5 +7,7 @@
   "currency": null,
   "data_version": "7d2a1cac3e153db5",
   "content_hash": "7d2a1cac3e153db5104c95a46a8fa8fa81efba128f20f3bc170d49762960984e",
-  "license_or_restriction": "U.S. public filing via SEC EDGAR."
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Semiconductors & Related Devices",
+  "company_name": "INTEL CORP"
 }

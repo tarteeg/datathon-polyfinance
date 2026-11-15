@@ -18,6 +18,7 @@ from strands import Agent
 from strands.models import BedrockModel
 
 from app.riskripple.tools.exposure_tools import ALL_EXPOSURE_TOOLS
+from app.riskripple.tools.portfolio_tools import ALL_PORTFOLIO_TOOLS
 from app.riskripple.tools.regulatory_tools import ALL_REGULATORY_TOOLS
 from app.riskripple.tools.research_tools import ALL_RESEARCH_TOOLS
 
@@ -120,13 +121,50 @@ not separate "Bottom Line" / "Key Risk Mechanisms" / "Claim Classification Summa
 sections restating the same conclusion three ways. Length should track the evidence:
 if the event is too vague to find anything specific, say that in a few sentences and
 ask for a more specific event -- do not pad a thin result with a long breakdown of a
-holding's general business just to look thorough."""
+holding's general business just to look thorough.
+
+Before investigating, classify the event description itself as exactly one of: a
+specific dated event, a broad ongoing topic (e.g. "taiwan china", "sanctions"), or an
+explicitly hypothetical scenario. If it is a broad topic, do not blend multiple
+distinct transmission mechanisms into one undifferentiated rating -- explicitly name
+the 2-3 most relevant distinct sub-scenarios (e.g. "export-control restriction" vs.
+"military/blockade disruption") and address them separately, since they imply
+different holdings and different severities.
+
+Wording discipline, checked against real failures seen in earlier runs today: never
+write "All evidence is in" or similar -- the honest phrasing is "Investigation
+completed within the sources and tools available," since indirect relationships and
+downstream effects are never fully exhausted. Never present "no established link" as
+a strong claim that a holding has NO real-world exposure -- it only means this
+investigation's search, with these tools, over these documents, found no direct
+textual evidence. Say so explicitly, especially for a holding whose industry isn't
+well covered by chip/export/sanctions-oriented search terms (e.g. a travel, retail, or
+services company) -- the right move there is to ask what questions actually fit THAT
+industry (e.g. for a travel company: cross-border operations, FX exposure, consumer
+discretionary spending; not semiconductor supply chains), not to reuse the same
+questions that worked for a tech holding. Never declare one holding "more severely
+exposed" than another without naming the specific dimension the comparison is on
+(e.g. supply-chain dependency vs. regulatory exposure vs. realized-vs-hypothetical
+financial impact) -- a bare severity ranking with no defined metric is not a
+supportable claim.
+
+Before finishing, call record_exposure_classification exactly once per holding you
+were asked to investigate, with your final tier for that holding (see that tool's
+description for the exact allowed values and what each means) and a short reason.
+Then, generate exactly ONE additional, dynamically-chosen follow-up question about a
+downstream relationship or exposure channel you have NOT already covered in your main
+investigation (pick whatever is actually most relevant given what you found -- a
+supplier-of-a-supplier, a competitor, a major customer, a macro transmission channel;
+never a fixed/generic question), use exactly one more tool call to investigate it, and
+call record_followup_finding exactly once with the result. This is a single bounded
+step, not an open-ended research loop -- do not chain further follow-up questions from
+its result."""
 
 
 def build_ripple_investigator_agent() -> Agent:
     return Agent(
         model=_bedrock_model(),
-        tools=ALL_RESEARCH_TOOLS + ALL_REGULATORY_TOOLS + ALL_EXPOSURE_TOOLS,
+        tools=ALL_RESEARCH_TOOLS + ALL_REGULATORY_TOOLS + ALL_EXPOSURE_TOOLS + ALL_PORTFOLIO_TOOLS,
         system_prompt=RIPPLE_INVESTIGATOR_PROMPT,
     )
 

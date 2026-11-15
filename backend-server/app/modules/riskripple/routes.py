@@ -2,11 +2,13 @@
 plus the Ripple Investigation Agent (Bedrock/Strands) tying them together with the
 company exposure graph and RAG retrieval over filings.
 
-Ported from riskripple-ai (see app/riskripple/). Only the research/regulatory/exposure
-tool surface was brought over -- finance and persona tooling are a separate pass.
+Ported from riskripple-ai (see app/riskripple/). Finance (deterministic portfolio math)
+and persona (Amira/Mateo/Robert) tooling were ported in a later pass -- see
+app/riskripple/finance/ and app/riskripple/personas/.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import asdict, is_dataclass
 
@@ -15,7 +17,10 @@ from pydantic import BaseModel
 
 from app.riskripple.alerts.db import get_all_portfolios
 from app.riskripple.alerts.pipeline import run_alert_scan
+from app.riskripple.finance.live_portfolio import compute_annualized_volatility, compute_real_weights
+from app.riskripple.finance.stress import TIER_SHOCKS, build_tier_shock_scenario, run_stress_test
 from app.riskripple.ingestion import macro_fred, news_stocksfeed, regulatory_events, sanctions_gac, sanctions_ofac
+from app.riskripple.personas.assessment import compare_personas
 from app.riskripple.tools.research_tools import extract_candidate_entities
 
 router = APIRouter(prefix="/riskripple", tags=["riskripple"])
@@ -118,6 +123,138 @@ def get_macro_series(series_id: str):
 class InvestigateRequest(BaseModel):
     event_description: str
     portfolio_holdings: list[str]
+    # Optional real share quantities (symbol -> shares). When given, portfolio_impact
+    # and persona_comparison are computed from real, live-priced position weights
+    # instead of an assumed equal weighting -- see _extract_structured_findings and
+    # _build_portfolio_and_persona_sections below.
+    portfolio_quantities: dict[str, float] | None = None
+
+
+def _extract_structured_findings(messages: list[dict]) -> tuple[dict[str, dict], dict | None, dict[str, str]]:
+    """Scan the agent's real tool-call trace (not its free-text prose) for the
+    structured decisions it recorded via record_exposure_classification and
+    record_followup_finding, plus the real per-holding SEC industry classification
+    from its load_company_graph call. Returns (exposure_classifications keyed by
+    symbol, followup_finding or None, industries keyed by symbol).
+    """
+    exposure: dict[str, dict] = {}
+    followup: dict | None = None
+    industries: dict[str, str] = {}
+
+    for message in messages:
+        for block in message.get("content", []) or []:
+            if not isinstance(block, dict):
+                continue
+            tool_use = block.get("toolUse")
+            if tool_use and tool_use.get("name") == "record_exposure_classification":
+                inp = tool_use.get("input") or {}
+                symbol = inp.get("symbol")
+                if symbol and inp.get("tier") in TIER_SHOCKS:
+                    exposure[symbol] = {"tier": inp["tier"], "reason": inp.get("reason", "")}
+            elif tool_use and tool_use.get("name") == "record_followup_finding":
+                followup = tool_use.get("input") or {}
+            elif tool_use and tool_use.get("name") == "load_company_graph":
+                pass  # industries come from the RESULT, not the call -- handled below
+
+            tool_result = block.get("toolResult")
+            if tool_result:
+                content = tool_result.get("content") or []
+                for c in content:
+                    text = c.get("text") if isinstance(c, dict) else None
+                    if not text:
+                        continue
+                    try:
+                        parsed = json.loads(text)
+                    except (ValueError, TypeError):
+                        continue
+                    if isinstance(parsed, dict) and "industries" in parsed and isinstance(parsed["industries"], dict):
+                        for symbol, sic in parsed["industries"].items():
+                            if sic:
+                                industries[symbol] = sic
+
+    return exposure, followup, industries
+
+
+def _build_portfolio_and_persona_sections(
+    portfolio_holdings: list[str],
+    portfolio_quantities: dict[str, float] | None,
+    exposure_classifications: dict[str, dict],
+    industries: dict[str, str],
+) -> tuple[dict, dict]:
+    """Deterministic (non-LLM) portfolio-impact and persona-comparison sections, built
+    from the agent's own recorded exposure tiers -- never an LLM-generated number."""
+    tiers = {
+        symbol: exposure_classifications.get(symbol, {}).get("tier", "no_established_link")
+        for symbol in portfolio_holdings
+    }
+
+    weights_are_real = False
+    price_errors: dict[str, str] = {}
+    if portfolio_quantities:
+        real_quantities = {s: q for s, q in portfolio_quantities.items() if s in portfolio_holdings}
+        weights, price_errors, _total_value = compute_real_weights(real_quantities)
+        if weights:
+            weights_are_real = True
+        else:
+            weights = {}
+    else:
+        weights = {}
+
+    if not weights_are_real:
+        n = len(portfolio_holdings) or 1
+        weights = {symbol: 1.0 / n for symbol in portfolio_holdings}
+
+    scenario = build_tier_shock_scenario(tiers)
+    stress_result = run_stress_test(100_000.0, weights, scenario)
+    scenario_pnl_pct = stress_result.portfolio_pnl / stress_result.portfolio_value_before
+
+    volatilities: dict[str, float | None] = {}
+    for symbol in portfolio_holdings:
+        try:
+            volatilities[symbol] = compute_annualized_volatility(symbol)
+        except Exception:  # noqa: BLE001 -- volatility is supporting context, never fatal
+            volatilities[symbol] = None
+
+    portfolio_impact = {
+        "weights_are_real": weights_are_real,
+        "weights": weights,
+        "weights_disclosure": (
+            "Computed from your real position quantities and live current prices."
+            if weights_are_real
+            else "ASSUMPTION: real position sizes were not provided for this request, so an equal weighting "
+            "across the listed holdings was assumed. This is explicitly disclosed, not a silent default."
+        ),
+        "price_errors": price_errors,
+        "exposure_tiers": tiers,
+        "tier_shock_table": TIER_SHOCKS,
+        "scenario_portfolio_pnl_pct": scenario_pnl_pct,
+        "scenario_position_pnl": stress_result.position_pnl,
+        "unshocked_holdings": stress_result.unshocked_assets,
+        "assumptions_label": stress_result.assumptions_label,
+        "annualized_volatility": volatilities,
+    }
+
+    persona_assessments = compare_personas(
+        weights=weights,
+        weights_are_real=weights_are_real,
+        industries=industries,
+        tiers=tiers,
+        scenario_pnl_pct=scenario_pnl_pct,
+    )
+    persona_comparison = [
+        {
+            "persona": a.persona,
+            "display_name": a.display_name,
+            "description": a.description,
+            "constraint_violations": a.constraint_violations,
+            "esg_notes": a.esg_notes,
+            "verdict": a.verdict,
+            "challenges_the_request": a.challenges_the_request,
+        }
+        for a in persona_assessments
+    ]
+
+    return portfolio_impact, persona_comparison
 
 
 def _summarize_message(message: dict) -> dict:
@@ -223,13 +360,28 @@ def investigate(request: InvestigateRequest):
             "note": "Agent invocation failed -- likely missing/expired Bedrock credentials or model access in this region.",
         }
 
-    trace = [_summarize_message(m) for m in agent.messages]
+    raw_messages = [m if isinstance(m, dict) else dict(m) for m in agent.messages]
+    trace = [_summarize_message(m) for m in raw_messages]
+
+    exposure_classifications, followup_finding, industries = _extract_structured_findings(raw_messages)
+    try:
+        portfolio_impact, persona_comparison = _build_portfolio_and_persona_sections(
+            request.portfolio_holdings, request.portfolio_quantities, exposure_classifications, industries
+        )
+    except Exception as exc:  # noqa: BLE001 -- quant/persona sections are additive; never fail the whole response
+        portfolio_impact = {"error": f"Could not compute portfolio impact: {type(exc).__name__}: {exc}"}
+        persona_comparison = []
+
     return {
         "event_description": request.event_description,
         "portfolio_holdings": request.portfolio_holdings,
         "answer": str(result),
         "trace": trace,
         "error": None,
+        "exposure_classifications": exposure_classifications,
+        "followup_investigation": followup_finding,
+        "portfolio_impact": portfolio_impact,
+        "persona_comparison": persona_comparison,
     }
 
 
