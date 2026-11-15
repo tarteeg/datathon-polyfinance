@@ -281,10 +281,21 @@ def alerts_scan(request: AlertScanRequest):
             if request.search_term:
                 result = regulatory_events.search_documents(term=request.search_term, per_page=request.per_page)
             else:
-                result = regulatory_events.search_documents_multi(per_page=request.per_page)
+                # Broad, topic-agnostic pull (any agency, no keyword filter) rather
+                # than the old 5-fixed-phrase semiconductor/export net -- see
+                # search_documents_broad's docstring. The old narrow multi-term
+                # search is still available via an explicit `search_term`. The
+                # request's `per_page` default (10) is tuned for a single-term
+                # search; a broad, unfiltered pull needs more volume to carry real
+                # topic diversity, so use at least 40 here unless the caller asked
+                # for more.
+                result = regulatory_events.search_documents_broad(per_page=max(request.per_page, 40))
         except Exception as exc:
             raise HTTPException(502, f"Federal Register fetch failed: {exc}") from exc
         documents = _dataclass_list(result.documents)
+
+    for d in documents:
+        d.setdefault("source", "regulatory")
 
     portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
     if not portfolios:
@@ -313,10 +324,14 @@ def alerts_scan_news(request: AlertScanNewsRequest):
     scope to one caller's real holdings; omit both to scan every real user's real
     portfolio instead.
 
-    Most real news (earnings notes, analyst calls, executive gossip) is not a
-    trickle-down risk event, so articles are pre-filtered to ones containing an
-    independent trade/export/sanctions/supply-chain signal before being checked --
-    see `ingestion.news_stocksfeed._has_trade_signal`.
+    Articles are no longer pre-filtered by topic keyword (an earlier version only
+    passed through ones mentioning trade/export/sanctions terms, which silently
+    dropped real non-trade news like a CEO change or a lawsuit about a held company).
+    Instead, a "direct" match -- an article literally about a held ticker, which is
+    the common case here since StocksFeed already fetches per ticker -- is routed
+    through a dedicated materiality check (`alerts.verification`'s direct-news path)
+    that judges THIS article specifically, rather than filtering by keyword before
+    anything reads it.
     """
     portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
     if not portfolios:

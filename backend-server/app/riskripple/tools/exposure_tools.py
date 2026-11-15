@@ -31,6 +31,21 @@ from app.riskripple.tools.research_tools import extract_candidate_entities, is_g
 # signal about this specific event or holding.
 _BOILERPLATE_MATCH_THRESHOLD = 0.75
 
+# Multi-word country/region names -- the phrase-level equivalent of
+# research_tools._GENERIC_CATEGORY_TERMS' single-word country list ("russia",
+# "taiwan", ...). A bare country name alone is geography, not a transmission
+# mechanism, whether it's one word or several -- confirmed live: "United Arab
+# Emirates" (from a real oil-pipe antidumping case) matched NVDA purely on shared
+# geography, no real connection. A closed, enumerable list, not an attempt at general
+# phrase classification -- see the caller's comment for why a blanket "any multi-word
+# phrase needs verification" rule was tried and reverted (it broke "Entity List").
+_GENERIC_GEOGRAPHY_PHRASES = frozenset({
+    "United Arab Emirates", "United Kingdom", "South Korea", "North Korea",
+    "Saudi Arabia", "South Africa", "New Zealand", "Costa Rica", "Sri Lanka",
+    "Hong Kong", "Czech Republic", "Dominican Republic", "El Salvador",
+    "Hong Kong SAR", "Taiwan SAR",
+})
+
 
 def _filter_boilerplate_candidates(candidates: dict[str, list[str]], fixtures_dir) -> dict[str, list[str]]:
     import re as _re
@@ -164,8 +179,24 @@ def load_company_graph(
             # alerts.verification) treats it as an unverified candidate requiring
             # Stage-2 evidence verification, not as alert-worthy supplier evidence
             # on its own -- see research_tools.is_generic_category_term.
+            #
+            # Also applies to multi-word GEOGRAPHY phrases (e.g. "United Arab
+            # Emirates") for the same reason the single-word country list exists --
+            # confirmed live, once the regulatory feed was broadened beyond a narrow
+            # semiconductor/export topic set, a real oil-pipe antidumping case against
+            # the UAE matched NVDA purely because "United Arab Emirates" is a bare
+            # geography phrase, no real connection. An earlier, broader version of
+            # this fix treated EVERY multi-word phrase this way, but that's wrong: a
+            # genuinely specific multi-word term like "Entity List" (the Commerce
+            # Department's real export-control mechanism, deliberately NOT denylisted
+            # earlier today precisely because AMD/NVDA's own 10-Ks substantively
+            # discuss it) was caught by that blanket rule too and incorrectly
+            # downgraded -- confirmed as a real regression and reverted. Geography
+            # phrases are a closed, enumerable category (unlike "any multi-word
+            # phrase"), so a curated denylist is the right, narrow tool here, same
+            # philosophy as the single-word list.
             for edge in candidate_edges:
-                if is_generic_category_term(edge.target):
+                if is_generic_category_term(edge.target) or edge.target in _GENERIC_GEOGRAPHY_PHRASES:
                     edge = edge.model_copy(update={"relationship_type": "generic_candidate"})
                 edges.append(edge)
 

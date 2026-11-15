@@ -5,38 +5,27 @@ run_alert_scan` can scan news without any new matching/recommendation logic.
 Reuses the existing `app.integrations.stocksfeed.service.fetch_articles` call --
 the same live external API the rest of the app already uses for its news feed --
 rather than re-implementing the HTTP call.
+
+Used to hard-filter every article through a trade/export/sanctions keyword regex
+before it ever reached relevance-checking, on the theory that most real news about a
+held ticker isn't a trickle-down risk event. Confirmed live and removed: that filter
+silently dropped a real NVIDIA-ticker article about a CEO succession story (and would
+have dropped a lawsuit, a recall, an earnings surprise -- anything with no trade
+vocabulary), even though a CEO/legal/operational story about a company you DIRECTLY
+hold doesn't need a trade angle to be worth flagging. The news is already scoped to
+tickers actually held (via StocksFeed's own `tickers` param), so that's the real
+narrowing that matters -- an extra topic filter on top of already-scoped data was
+hiding real signal, not reducing noise. The noise problem this used to guard against
+(ordinary earnings/analyst coverage, not a real event) is now handled downstream, per
+document, by `alerts.verification`'s direct-news materiality check -- an LLM judgment
+call on THIS specific article, not a keyword pre-filter applied before anything reads
+the article at all.
 """
 from __future__ import annotations
 
 import hashlib
-import re
 
 from app.integrations.stocksfeed import service as stocksfeed_service
-
-# Most real news about a held ticker is not a trickle-down risk event (earnings
-# beats, analyst notes, executive gossip, a product review). Confirmed live: a real
-# article about an NVIDIA executive's alleged ties to "a Chinese spy" contains the
-# word "Chinese" -- which is in `research_tools._SINGLE_WORD_ALLOWLIST` as a
-# sanctions-relevant geography term, and would coincidentally match NVDA's own 10-K
-# (which genuinely, substantively discusses China/Chinese market exposure) even
-# though this specific article has nothing to do with trade, export controls, or
-# supply chains -- it's a personal/espionage story that happens to use a
-# nationality adjective. Unlike a Federal Register document (which is near-certain
-# to be substantively about trade/regulation if it mentions a country), ordinary
-# news can mention a country/material incidentally. Cheap, honest fix: only pass an
-# article into the exposure-matching pipeline at all if its own text contains some
-# independent signal that it's actually about trade/regulatory/supply-chain
-# mechanics -- not just because a country or material name happens to appear in it.
-_TRADE_SIGNAL_RE = re.compile(
-    r"\b(export|import|sanction|tariff|trade war|trade dispute|supply chain|"
-    r"embargo|duty|duties|customs|antidumping|anti-dumping|quota|entity list|"
-    r"forced labor|forced labour|geopolit|export control|ban on|restrict)",
-    re.IGNORECASE,
-)
-
-
-def _has_trade_signal(text: str) -> bool:
-    return bool(_TRADE_SIGNAL_RE.search(text))
 
 
 def _article_document_number(article: dict) -> str:
@@ -44,7 +33,7 @@ def _article_document_number(article: dict) -> str:
     return "news:" + hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def _article_to_document(article: dict) -> dict:
+def _article_to_document(article: dict, *, source_ticker: str) -> dict:
     body = "\n\n".join(
         part for part in (
             article.get("content"),
@@ -58,15 +47,22 @@ def _article_to_document(article: dict) -> dict:
         "abstract": body,
         "publication_date": article.get("publish_date"),
         "document_url": article.get("url"),
+        # Lets the alert pipeline route a "direct" match through the news-specific
+        # materiality check (alerts.verification) instead of the regulatory path's
+        # "directly named = automatically material" shortcut, which is correct for a
+        # government filing but would make every routine news mention an alert.
+        "source": "news",
+        "source_ticker": source_ticker,
     }
 
 
 def fetch_news_documents_for_tickers(tickers: list[str], *, limit_per_ticker: int = 5) -> list[dict]:
-    """Fetches each ticker's recent real news once (de-duplicated across callers that
-    pass overlapping ticker lists) and returns only the articles that contain an
-    independent trade/regulatory/supply-chain signal -- see `_has_trade_signal`.
-    Articles are deduplicated by document_number (same article can come back for
-    more than one ticker query, e.g. a multi-company roundup).
+    """Fetches each ticker's recent real news (de-duplicated across callers that pass
+    overlapping ticker lists) and returns it as alert-pipeline documents, unfiltered
+    by topic -- see the module docstring for why the old trade-signal filter was
+    removed. Articles are deduplicated by document_number (the same article can come
+    back for more than one ticker query, e.g. a multi-company roundup); the first
+    ticker it's seen for is recorded as `source_ticker`.
     """
     documents: dict[str, dict] = {}
     for ticker in dict.fromkeys(tickers):  # de-dupe while preserving order
@@ -77,9 +73,6 @@ def fetch_news_documents_for_tickers(tickers: list[str], *, limit_per_ticker: in
         except stocksfeed_service.StocksFeedError:
             continue  # a single ticker's news being unavailable shouldn't fail the whole scan
         for article in payload.get("articles", []):
-            text = f"{article.get('title', '')} {article.get('content', '')} {article.get('summary_extended', '')}"
-            if not _has_trade_signal(text):
-                continue
-            doc = _article_to_document(article)
+            doc = _article_to_document(article, source_ticker=ticker)
             documents.setdefault(doc["document_number"], doc)
     return list(documents.values())

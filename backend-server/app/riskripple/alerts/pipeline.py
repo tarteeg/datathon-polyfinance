@@ -208,7 +208,12 @@ def run_alert_scan(
             recommendations = []
             for m in matches:
                 verdict = classify_match(
-                    client, document_title=doc.get("title", ""), match=m, industry=industries.get(m.symbol)
+                    client,
+                    document_title=doc.get("title", ""),
+                    match=m,
+                    industry=industries.get(m.symbol),
+                    document_source=doc.get("source", "regulatory"),
+                    document_text=doc_text,
                 )
                 classification = verdict["classification"]
                 if classification == "dismissed_insufficient_evidence":
