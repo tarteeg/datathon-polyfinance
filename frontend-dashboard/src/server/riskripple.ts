@@ -95,6 +95,7 @@ export async function investigate(
 }
 
 export type InvestigationHistoryEntry = {
+  id: number;
   event_description: string;
   portfolio_holdings: string[];
   result: InvestigateResult;
@@ -110,6 +111,16 @@ export async function getInvestigationHistory(userId: string, limit = 10): Promi
   if (!response.ok) throw new Error(`History request failed (${response.status})`);
   const data = await response.json();
   return data.history ?? [];
+}
+
+export async function deleteInvestigationHistory(userId: string, entryId: number): Promise<boolean> {
+  const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
+  const url = new URL(`/riskripple/investigate/history/${entryId}`, backend);
+  url.searchParams.set("user_id", userId);
+  const response = await fetch(url, { method: "DELETE", cache: "no-store", signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`Delete request failed (${response.status})`);
+  const data = await response.json();
+  return !!data.deleted;
 }
 
 export type AlertMatch = {

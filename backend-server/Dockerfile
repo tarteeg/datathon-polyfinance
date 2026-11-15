@@ -14,6 +14,14 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY data ./data
+
+# The pre-fetched fixtures above are read-only, but RiskRipple also live-fetches and
+# caches filings for any ticker not already in data/fixtures (fetch_and_cache_10k).
+# /srv is root-owned, so the unprivileged `app` user below can't create data/ itself --
+# confirmed live: a first-ever scan for a ticker outside the pre-fetched set crashed
+# the whole alert scan with "PermissionError: [Errno 13] Permission denied: '/srv/data'".
+RUN chown -R app:app ./data
 
 USER app
 EXPOSE 8000

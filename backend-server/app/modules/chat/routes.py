@@ -13,12 +13,22 @@ from pydantic import BaseModel, Field
 from app.integrations.stocksfeed.service import StocksFeedError
 from app.integrations.yahoo import service as yahoo
 from app.modules.chat.discovery import COMPARE_TOOL, DISCOVER_TOOL, CompanyDiscovery, StockComparison, comparison_queries, discover
+from app.modules.headlines.impact import ImpactRequest, analyze, impact
 from app.modules.chat.stock import STOCK_TOOL, StockQuery, lookup_stock, stock_source
 from app.modules.chat.portfolio import PORTFOLIO_TOOL, Holding, PortfolioQuery, portfolio_snapshot
 from app.modules.chat.news import NEWS_TOOL, NewsQuery, search_news, source_list
 from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANALYSIS_TOOLS, run_analysis_tool
 from app.modules.verification.ledger import EvidenceLedger
 from app.modules.verification.step import verification_activity, verification_started
+
+from app.modules.decision_lab.schemas import LabRequest
+from app.modules.decision_lab.service import analyze as analyze_breakpoint
+
+BREAKPOINT_TOOL = {"toolSpec": {
+    "name": "analyze_breakpoint",
+    "description": "Retrieve the daily-rebalanced replay and instantaneous single-asset shock for the attached BreakPoint dashboard settings.",
+    "inputSchema": {"json": {"type": "object", "properties": {}}},
+}}
 
 router = APIRouter()
 
@@ -33,6 +43,7 @@ class ChatRequest(BaseModel):
     holdings: list[Holding] | None = None
     previous_stock: dict | None = None
     previous_news: dict | None = None
+    decision_lab: LabRequest | None = None
     chart: dict | None = None
     history: list[Exchange] = Field(max_length=10)
 
@@ -49,10 +60,49 @@ def bedrock():
     return boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION"))
 
 
-def model_for_request(x_chat_key: str):
+def guardrail_config(streaming: bool) -> dict:
+    """Bedrock Guardrails settings from the environment. Empty when no guardrail is configured."""
+    guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
+    if not guardrail_id:
+        return {}
+    config = {"guardrailIdentifier": guardrail_id, "guardrailVersion": os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")}
+    # Without the trace, a streamed reply blocked on output can end with stopReason "end_turn",
+    # so the trace is the reliable signal that the guardrail replaced the answer.
+    config["trace"] = "enabled"
+    if streaming:
+        # "sync" checks each chunk before it is sent, so blocked text never reaches the user.
+        config["streamProcessingMode"] = "sync"
+    return {"guardrailConfig": config}
+
+
+def guardrail_blocked(trace: dict | None) -> bool:
+    """True when any guardrail assessment in a Converse trace blocked the turn."""
+    def blocked(node) -> bool:
+        if isinstance(node, dict):
+            return node.get("action") == "BLOCKED" or any(blocked(value) for value in node.values())
+        if isinstance(node, list):
+            return any(blocked(value) for value in node)
+        return False
+
+    return blocked((trace or {}).get("guardrail"))
+
+
+BLOCKED_PREFIX = f"root = FinanceAnswer({json.dumps('Demande non traitée', ensure_ascii=False)}, "
+
+
+def blocked_answer(message: str) -> str:
+    """Wrap the guardrail's refusal in the expression the dashboard renders."""
+    return f"{BLOCKED_PREFIX}{json.dumps(message, ensure_ascii=False)}, [], [], [])"
+
+
+def require_dashboard(x_chat_key: str):
     key = os.getenv("CHAT_API_KEY")
     if not key or not secrets.compare_digest(x_chat_key.encode(), key.encode()):
         raise HTTPException(403, "Dashboard authentication required.")
+
+
+def model_for_request(x_chat_key: str):
+    require_dashboard(x_chat_key)
     model = os.getenv("BEDROCK_MODEL_ID")
     if not model:
         raise HTTPException(503, "Bedrock model is not configured.")
@@ -72,7 +122,16 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         question += "\n\nPrevious stock lookup (historical reference): " + json.dumps(request.previous_stock)
     if request.previous_news:
         question += "\n\nPreviously cited sources in numbered order (reference data): " + json.dumps(request.previous_news)
-    messages.append({"role": "user", "content": [{"text": question}]})
+    if guardrail_config(streaming):
+        # Only the user's own words are checked on input. Saved chart data, headlines and tool
+        # results stay outside guardContent so they cannot trigger or be altered by the guardrail.
+        content = [{"guardContent": {"text": {"text": request.question}}}]
+        context = question[len(request.question):].strip()
+        if context:
+            content.append({"text": context})
+        messages.append({"role": "user", "content": content})
+    else:
+        messages.append({"role": "user", "content": [{"text": question}]})
     system = [{"text": (
         "You are the AlphaForge finance education assistant. Reply in the user's language. "
         "Explain concepts and hypothetical examples. Use supplied chart facts or saved headlines when present. Use StocksFeed for current coverage. For chart explanations give the date range, price move and largest adjacent candle move if available. Use the supplied baseline and timestamps. Avoid inferring causes from prices or headlines. "
@@ -110,17 +169,29 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         "Avoid personalized investment recommendations. After any necessary tool calls, write your ENTIRE final "
         "response as a single valid OpenUI expression. No surrounding prose, code fences or extra statements. "
         "The registered root component signature is FinanceAnswer(title: string, explanation: string, "
-        "headers: string[], rows: string[][]). All four arguments are POSITIONAL JSON literals with double quotes. "
+        "headers: string[], rows: string[][], followUps: string[]). All five arguments are positional JSON literals. "
+        "For followUps generate two or three short, distinct questions the user could ask next, in the user's "
+        "language, grounded in THIS answer and answerable with available tools. Write from the user's perspective. "
+        "Avoid repeating answered questions or suggesting trades. Use [] when there is no useful continuation. "
         "Begin with root = FinanceAnswer(...). For stock performance use a concise takeaway in explanation, then "
         "headers such as [\"Metric\",\"Value\"] and one row per supplied price, change or range. For comparisons "
         "use a column for each option. Use equal-width rows. Never put pipe tables in explanation. "
         "For a simple conversational answer or news summary use empty arrays for headers and rows. "
         'Example: root = FinanceAnswer("Price range", "The observed low and high are shown below.", '
-        '["Metric", "Value"], [["Period low", "USD 10"], ["Period high", "USD 12"]]) '
+        '["Metric", "Value"], [["Period low", "USD 10"], ["Period high", "USD 12"]], ["How does that range compare with last month?"]) '
         "Use actual evidence instead of the example values. A period high and low on different days are not "
         "a single-candle move. Only discuss the biggest candle move when explicitly provided."
 
     )}]
+    if request.decision_lab:
+        system.append({"text": (
+            "Explain the attached fictional BreakPoint scenario using only the figures returned by analyze_breakpoint. "
+            "Percent fields are already percentages. Compare the replay's peak-to-trough drawdown with the editable loss limit, "
+            "then explain the instantaneous shock with the other ETF held flat. Distinguish reaching from exceeding. "
+            "Use the selected persona: Robert prioritizes preservation over 3–5 years; Amira values growth and diversification over 15+ years; "
+            "Mateo balances growth and stability over 8–12 years and cares about ESG, for which this tool has no evidence. "
+            "The limit is the user's assumption. Name the price source and actual coverage. Never infer forecasts or recovery dates."
+        )})
     news = None
     stocks = []
     searches = []
@@ -134,8 +205,13 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         if request.holdings is not None:
             available.append(PORTFOLIO_TOOL)
         tools = {"toolConfig": {"tools": available}}
-        for _ in range(8):
-            answer, calls = yield from model_events(args, tools, streaming)
+        if request.decision_lab:
+            tools = {"toolConfig": {"tools": [BREAKPOINT_TOOL]}}
+        for round_index in range(8):
+            options = tools
+            if request.decision_lab and round_index == 0:
+                options = {"toolConfig": {**tools["toolConfig"], "toolChoice": {"tool": {"name": "analyze_breakpoint"}}}}
+            answer, calls = yield from model_events(args, options, streaming)
             if not calls:
                 break
             messages.append({"role": "assistant", "content": [{"toolUse": call} for call in calls]})
@@ -146,6 +222,8 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                             "ticker", "tickers", "period", "sector", "comparison_period", "hours", "view", "limit", "topic", "show_chart",
                             *ACTIVITY_INPUTS,
                         }}}
+                if call["name"] == "analyze_breakpoint" and request.decision_lab:
+                    step["input"] = request.decision_lab.model_dump(mode="json")
                 if streaming:
                     yield {"activity": {**step, "status": "running"}}
                 status = "completed"
@@ -201,6 +279,13 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                     except (ValueError, StocksFeedError):
                         status = "failed"
                         evidence.append({"news lookup unavailable": call["input"]})
+                elif call["name"] == "analyze_breakpoint" and request.decision_lab:
+                    lab = analyze_breakpoint(request.decision_lab)
+                    summary = lab.model_dump(exclude={"replay": {"series"}})
+                    step["result"] = summary
+                    evidence.append({"settings": step["input"], "result": summary})
+                    if lab.replay_error:
+                        status = "partial"
                 elif call["name"] in ANALYSIS_TOOL_NAMES:
                     calculation, status = run_analysis_tool(call["name"], call["input"], request.holdings)
                     evidence.append({"AlphaForge calculation": calculation})
@@ -230,6 +315,9 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                  "history": [exchange.model_dump() for exchange in request.history]}
         yield {"activity": verification_started()}
         yield {"activity": verification_activity(answer, ledger, question=request.question, references=saved)}
+    if answer.startswith(BLOCKED_PREFIX):
+        # A refusal cites nothing, so drop the sources and snapshots gathered before the guardrail stopped it.
+        news, stocks, rankings, portfolio = None, [], [], None
     footer = (source_list(news) if news and news["stories"] else "") + "".join(stock_source(item) for item in stocks)
     for ranking in rankings:
         footer += f"\n\nStocksFeed · {ranking['sector'] or 'All sectors'} · Last {ranking['hours']} hours · {ranking['asOf']}"
@@ -240,10 +328,15 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
 
 
 def model_events(args, options, streaming):
+    args = {**args, **guardrail_config(streaming)}
     if not streaming:
         result = bedrock().converse(**args, **options)
         blocks = result["output"]["message"]["content"]
         text = "".join(block.get("text", "") for block in blocks)
+        if result.get("stopReason") == "guardrail_intervened" or guardrail_blocked(result.get("trace")):
+            text = blocked_answer(text)
+            yield {"delta": text}
+            return text, []
         calls = [block["toolUse"] for block in blocks if "toolUse" in block]
         if text and not calls:
             start = re.search(r"^[ \t]*root\s*=\s*FinanceAnswer\(", text, re.MULTILINE)
@@ -258,6 +351,7 @@ def model_events(args, options, streaming):
     emitted = 0
     calls = {}
     stop = None
+    blocked = False
     try:
         for event in stream:
             if "contentBlockStart" in event:
@@ -280,16 +374,26 @@ def model_events(args, options, streaming):
                         emitted = len(text)
             elif "messageStop" in event:
                 stop = event["messageStop"]["stopReason"]
+            elif "metadata" in event:
+                blocked = blocked or guardrail_blocked(event["metadata"].get("trace"))
             elif any(key.endswith("Exception") for key in event):
                 raise HTTPException(502, "Bedrock interrupted the stream.")
     finally:
         stream.close()
+    if stop == "guardrail_intervened" or blocked:
+        if emitted:
+            # Sync mode should prevent this; never append a second answer to a partial one.
+            raise HTTPException(502, "The guardrail stopped the answer.")
+        # Nothing was emitted, and `text` holds the guardrail's configured message.
+        text = blocked_answer(text)
+        yield {"delta": text}
+        return text, []
     if stop not in ("tool_use", "end_turn", "stop_sequence"):
         raise HTTPException(502, "Bedrock did not finish the answer.")
     if not calls and not emitted:
         raise HTTPException(502, "The assistant returned an invalid answer.")
     for call in calls.values():
-        call["input"] = json.loads(call["input"])
+        call["input"] = json.loads(call["input"] or "{}")
     return text, list(calls.values())
 
 
@@ -315,3 +419,16 @@ def stream_chat(request: ChatRequest, x_chat_key: str = Header(default="")):
 
     return StreamingResponse(lines(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"})
+
+
+@router.post("/headlines/impact")
+def headline_impact(request: ImpactRequest, x_chat_key: str = Header(default="")):
+    model = model_for_request(x_chat_key)
+    try:
+        result = impact(request)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    try:
+        return analyze(request, result, model, bedrock())
+    except (ValueError, KeyError, TypeError, BotoCoreError, ClientError) as error:
+        raise HTTPException(502, "Bedrock could not complete the headline analysis.") from error

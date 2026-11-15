@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from app.modules.chat.routes import router as chat_router
+from app.modules.decision_lab.routes import router as decision_lab_router
 from app.modules.stocks.routes import router as stocks_router
 
 from app.modules.stocksfeed.routes import router as stocksfeed_router
@@ -16,3 +17,4 @@ app.include_router(chat_router)
 app.include_router(stocks_router)
 app.include_router(stocksfeed_router)
 app.include_router(riskripple_router)
+app.include_router(decision_lab_router)

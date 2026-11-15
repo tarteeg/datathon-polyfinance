@@ -32,6 +32,14 @@ def fetch_articles(params: dict) -> dict:
 
 def fetch_article(slug: str) -> dict:
     payload = _fetch(f"article/{quote(slug, safe='')}")
+    return _article_result(payload)
+
+
+def fetch_article_by_url(url):
+    return _article_result(_fetch("article", {"url": url}))
+
+
+def _article_result(payload):
     if "article" not in payload or not isinstance(payload["article"], (dict, type(None))):
         raise StocksFeedError("Invalid StocksFeedAI article response")
     return payload

@@ -356,6 +356,18 @@ function Conversation({
                                 </>
                               )}
                               {!streaming && <CopyReply text={reply.copy} />}
+                              {!busy && !threadError && id === messages.at(-1)?.id && Boolean(reply.followUps?.length) && (
+                                <div role="group" aria-label="Suggested follow-up questions" className="flex flex-wrap gap-2">
+                                  {reply.followUps?.map((question) => (
+                                    <Button key={question} variant="outline" size="sm"
+                                      className="h-auto max-w-full py-1.5 text-left whitespace-normal"
+                                      onClick={() => void submit(question)}>
+                                      {question}
+                                      <ArrowUpRight data-icon="inline-end" />
+                                    </Button>
+                                  ))}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>

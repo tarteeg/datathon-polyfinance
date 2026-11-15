@@ -51,10 +51,14 @@ export function InvestigateForm({
                 const outcome = await runInvestigation(form);
                 if (!outcome.ok) {
                   setError(outcome.error);
+                } else if (outcome.data.error) {
+                  setError(outcome.data.error);
                 } else {
+                  // This is the live/current session's result -- past investigations
+                  // live on their own page now, so showing it here is no longer a
+                  // duplicate.
                   setResult(outcome.data);
-                  if (outcome.data.error) setError(outcome.data.error);
-                  else onComplete?.();
+                  onComplete?.();
                 }
               } catch {
                 setError("Couldn’t reach the investigation agent. Try again.");
@@ -95,13 +99,13 @@ export function InvestigateForm({
         </CardContent>
       </Card>
 
-      {result && (
+      {result && !result.error && (
         <Card>
           <CardHeader>
             <CardTitle>Findings</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {result.error ? <p className="text-destructive text-sm">{result.error}</p> : <FindingsCards result={result} />}
+            <FindingsCards result={result} />
           </CardContent>
         </Card>
       )}

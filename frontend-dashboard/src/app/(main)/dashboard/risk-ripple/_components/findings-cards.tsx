@@ -66,7 +66,7 @@ function priorityBadgeVariant(priority: string): "default" | "secondary" | "outl
 
 // Attention-level vocabulary matches app/riskripple/briefing.py's ATTENTION_LEVELS
 // exactly -- this is a decision about where to look next, never a loss prediction.
-const ATTENTION_META: Record<string, { label: string; variant: "destructive" | "default" | "secondary" | "outline" }> = {
+export const ATTENTION_META: Record<string, { label: string; variant: "destructive" | "default" | "secondary" | "outline" }> = {
   ESCALATE: { label: "Escalate", variant: "destructive" },
   REVIEW: { label: "Review", variant: "default" },
   MONITOR: { label: "Monitor", variant: "secondary" },
@@ -91,12 +91,14 @@ function nextSteps(args: {
   tier: string | undefined;
   hasQuantifiedImpact: boolean;
   followup: InvestigateResult["followup_investigation"];
+  toolCallCount: number;
 }): string[] {
   const steps: string[] = [];
-  const { tier, hasQuantifiedImpact, followup } = args;
+  const { tier, hasQuantifiedImpact, followup, toolCallCount } = args;
 
   if (followup && followup.classification !== "supported") {
-    steps.push(`Investigate further: "${followup.question}" — currently ${followup.classification}.`);
+    const effort = toolCallCount > 0 ? ` after ${toolCallCount} real source checks (filings, SEC EDGAR, news)` : "";
+    steps.push(`Investigate further: "${followup.question}" — currently ${followup.classification}${effort}.`);
   }
   if (tier === "no_established_link") {
     steps.push("No evidence-based reason to change this position has been established from the sources checked.");
@@ -136,6 +138,21 @@ function extractSources(trace: InvestigateResult["trace"]): { url: string; label
     }
   }
   return Array.from(seen, ([url, label]) => ({ url, label }));
+}
+
+// Confirmed real: an "unresolved" follow-up often followed 10+ real tool calls across
+// SEC EDGAR, full-text filing search, and semantic search -- but the UI only ever
+// showed the bare word "unresolved," which reads as the agent not having tried. This
+// surfaces the real count from its own trace so the diligence is visible up front,
+// not only inside the collapsed "full report."
+function countToolCalls(trace: InvestigateResult["trace"]): number {
+  let count = 0;
+  for (const message of trace) {
+    for (const block of message.content) {
+      if (block.type === "tool_use") count++;
+    }
+  }
+  return count;
 }
 
 type SortMode = "priority" | "recency" | "ticker";
@@ -236,6 +253,7 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
   const portfolioImpact = result.portfolio_impact;
   const hasRealImpact = !!portfolioImpact && !portfolioImpact.error;
   const sources = useMemo(() => extractSources(result.trace), [result.trace]);
+  const toolCallCount = useMemo(() => countToolCalls(result.trace), [result.trace]);
   const followup = result.followup_investigation;
 
   const findings = useMemo(() => {
@@ -251,10 +269,10 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
         reason: entry?.reason || "Not yet investigated by the agent for this event.",
         hasQuantifiedImpact,
         positionPnl,
-        steps: nextSteps({ tier: entry?.tier, hasQuantifiedImpact, followup }),
+        steps: nextSteps({ tier: entry?.tier, hasQuantifiedImpact, followup, toolCallCount }),
       };
     });
-  }, [result.portfolio_holdings, classifications, portfolioImpact, hasRealImpact, followup]);
+  }, [result.portfolio_holdings, classifications, portfolioImpact, hasRealImpact, followup, toolCallCount]);
 
   const filtered = tickerFilter === "all" ? findings : findings.filter((f) => f.symbol === tickerFilter);
   const sorted = [...filtered].sort((a, b) => {
@@ -391,7 +409,7 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
       <Collapsible>
         <CollapsibleTrigger className="text-muted-foreground flex items-center gap-2 text-xs hover:underline">
           <Wrench className="size-3.5" />
-          Investigation steps & full report ({result.trace.length} trace messages)
+          Full research trail — {toolCallCount} real source checks (SEC filings, EDGAR, news)
         </CollapsibleTrigger>
         <CollapsibleContent className="mt-2 flex flex-col gap-4">
           {result.answer && (

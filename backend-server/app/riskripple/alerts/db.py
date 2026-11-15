@@ -96,7 +96,12 @@ CREATE TABLE IF NOT EXISTS riskripple_scan_cache (
 # the current response shape" and treat it as stale regardless of its age, without
 # needing to disable caching for genuinely current rows. Bump this whenever the
 # scan response shape or the logic that decides confirmed/candidate changes.
-CURRENT_SCAN_SCHEMA_VERSION = 2  # bumped: regulatory scans now also produce articles/investigation_candidates/confirmed_alerts
+# Bumped again (2026-11-15): the confirmation gate itself changed (hard
+# verification gate requiring a structured `mechanism` field, routine-administrative-
+# notice downgrade) -- a cache row written before this fix could still show false
+# "confirmed" alerts (e.g. the GOOGL/OWCP "Compensation Programs" false positives)
+# as fresh for up to the 10-minute freshness window otherwise.
+CURRENT_SCAN_SCHEMA_VERSION = 3
 
 
 def ensure_scan_cache_table() -> None:
@@ -258,20 +263,40 @@ def list_investigation_history(user_id: str, limit: int = 10) -> list[dict]:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT event_description, portfolio_holdings, result_json, created_at "
+            "SELECT id, event_description, portfolio_holdings, result_json, created_at "
             "FROM riskripple_investigation_history WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
             (user_id, limit),
         )
         rows = cur.fetchall()
         return [
             {
+                "id": entry_id,
                 "event_description": event_description,
                 "portfolio_holdings": portfolio_holdings,
                 "result": result_json,
                 "created_at": created_at.isoformat(),
             }
-            for event_description, portfolio_holdings, result_json, created_at in rows
+            for entry_id, event_description, portfolio_holdings, result_json, created_at in rows
         ]
+    finally:
+        conn.close()
+
+
+def delete_investigation_history(user_id: str, entry_id: int) -> bool:
+    """Deletes one past investigation, scoped to `user_id` so a caller can never
+    delete another user's row even if they guess an id. Returns whether a row was
+    actually deleted (false if it didn't exist or belonged to someone else)."""
+    ensure_history_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM riskripple_investigation_history WHERE id = %s AND user_id = %s",
+            (entry_id, user_id),
+        )
+        deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
     finally:
         conn.close()
 

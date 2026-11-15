@@ -447,17 +447,24 @@ def fetch_and_cache_10k(symbol: str, fixtures_dir) -> dict | None:
     except Exception:
         return None
 
-    base = Path(fixtures_dir) / "filings"
-    base.mkdir(parents=True, exist_ok=True)
-    text_path = base / f"{symbol.upper()}_10K.txt"
-    meta_path = base / f"{symbol.upper()}_10K.metadata.json"
-
     meta_dict = meta.model_dump(mode="json") if hasattr(meta, "model_dump") else vars(meta)
     meta_dict["sic_description"] = submissions.sic_description
     meta_dict["company_name"] = submissions.name
     meta_dict["fetched_live"] = True
 
-    text_path.write_text(text)
-    meta_path.write_text(json.dumps(meta_dict, indent=2, default=str))
+    # Caching to disk is an optimization (skip refetching next call), not a
+    # requirement -- the filing text above is already live-fetched and usable.
+    # Confirmed live: a read-only/unwritable fixtures_dir (e.g. a container running
+    # as a non-root user) raised PermissionError here and crashed the entire alert
+    # scan even though the real filing text had already been fetched successfully.
+    try:
+        base = Path(fixtures_dir) / "filings"
+        base.mkdir(parents=True, exist_ok=True)
+        text_path = base / f"{symbol.upper()}_10K.txt"
+        meta_path = base / f"{symbol.upper()}_10K.metadata.json"
+        text_path.write_text(text)
+        meta_path.write_text(json.dumps(meta_dict, indent=2, default=str))
+    except OSError:
+        pass
 
     return {"text": text, "metadata": meta_dict, "sic_description": submissions.sic_description}

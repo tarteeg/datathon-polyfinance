@@ -6,6 +6,12 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      {
+        source: "/dashboard/home",
+        has: [{ type: "query", key: "tab", value: "news" }],
+        destination: "/dashboard/portfolio-news",
+        permanent: true,
+      },
       { source: "/", destination: "/dashboard/home", permanent: false },
       {
         source: "/dashboard",

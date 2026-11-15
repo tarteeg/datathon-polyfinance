@@ -8,20 +8,25 @@ import { setClientCookie } from "@/lib/cookie.client";
 
 export function StockNewsLayout({
   heading,
+  filters,
   initialCards,
   children,
 }: {
   heading: string;
+  filters?: ReactNode;
   initialCards: boolean;
   children: ReactNode;
 }) {
   const [view, setView] = useState(initialCards ? "cards" : "rows");
   return (
-    <section aria-labelledby="stock-news-heading" data-view={view} className="group/news mt-2">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 id="stock-news-heading" className="text-lg font-medium">
+    <section aria-labelledby="stock-news-heading" data-view={view} className="group/news @container">
+      <div className={filters
+        ? "mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-center justify-between gap-2 border-b pb-4 sm:flex sm:flex-wrap"
+        : "mb-4 flex items-center justify-between gap-2 border-b pb-4"}>
+        <h2 id="stock-news-heading" className={filters ? "sr-only" : "text-lg font-medium"}>
           {heading}
         </h2>
+        {filters}
         <ToggleGroup
           type="single"
           variant="outline"
@@ -37,11 +42,11 @@ export function StockNewsLayout({
         >
           <ToggleGroupItem value="rows">
             <List />
-            Rows
+            <span className="sr-only sm:not-sr-only">Rows</span>
           </ToggleGroupItem>
           <ToggleGroupItem value="cards">
             <LayoutGrid />
-            Cards
+            <span className="sr-only sm:not-sr-only">Cards</span>
           </ToggleGroupItem>
         </ToggleGroup>
       </div>

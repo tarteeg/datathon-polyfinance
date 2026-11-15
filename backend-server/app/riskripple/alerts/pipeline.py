@@ -279,7 +279,20 @@ def run_alert_scan(
                 if m.relationship == "direct" and doc.get("source") == "news":
                     is_confirmed = verdict.get("classification_tier") == 5
                 else:
-                    is_confirmed = classification in _ALERT_WORTHY_CLASSIFICATIONS
+                    # Hard verification gate: classification label alone is NOT
+                    # sufficient -- `mechanism` is a structured field the verifier
+                    # itself must populate (see `verification.classify_match`), never
+                    # inferred by scanning the free-text recommendation for
+                    # disclaimer phrases ("no established connection" etc.), which a
+                    # reworded response could trivially evade. Confirmed live: a
+                    # classification-only gate let "evidence_supported_hypothesis"
+                    # through on bare coincidental word overlap (the "Compensation
+                    # Programs" / OWCP boilerplate case) with no real mechanism ever
+                    # stated anywhere in the structured verdict.
+                    is_confirmed = (
+                        classification in _ALERT_WORTHY_CLASSIFICATIONS
+                        and bool(verdict.get("mechanism"))
+                    )
                 try:
                     rec_text = _generate_recommendation(
                         client,

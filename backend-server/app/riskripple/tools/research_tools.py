@@ -89,6 +89,21 @@ _GENERIC_PROCEDURAL_WORDS = {
     # Register"/"Executive Order", a generic administrative-mechanism phrase, not a
     # specific list/restriction with real consequences.
     "privacy", "matching", "system", "systems", "record", "records", "data",
+    # Confirmed live: "Compensation Programs" -- the recurring "Office of Workers'
+    # Compensation Programs (OWCP)" boilerplate present in nearly every DOL Federal
+    # Register notice -- survived this filter ("programs" was already denylisted,
+    # "compensation" wasn't) and was promoted to a confirmed GOOGL alert for 4
+    # entirely unrelated OWCP paperwork notices (student death benefits, longshore
+    # workers, pneumoconiosis claims), because virtually every 10-K separately
+    # discusses its own "employee/equity compensation programs" in an unrelated
+    # context -- a universal coincidental-word match, not real evidence.
+    "compensation",
+    # Same OWCP boilerplate also extracts as the longer "Office of Workers'
+    # Compensation Programs" -- "office" and "programs" were already denylisted,
+    # but "workers" wasn't, so that longer variant alone would still have survived.
+    # "Workers compensation" is itself a generic benefits/insurance category term,
+    # never a specific fact on its own.
+    "worker", "workers",
 }
 
 
@@ -232,6 +247,38 @@ def is_generic_category_term(word: str) -> bool:
     """True if `word` (any case) is a generic industry/geography/mechanism category
     term rather than a specific material/fact -- see `_GENERIC_CATEGORY_TERMS`."""
     return word.lower() in _GENERIC_CATEGORY_TERMS
+
+
+# Deterministic classifier for a Federal Register/OMB routine paperwork notice --
+# the "Agency Information Collection Activities" family (comment requests, renewals,
+# extensions of existing information-collection approvals under the Paperwork
+# Reduction Act). These documents are administrative housekeeping between an agency
+# and OMB about a form/survey/reporting requirement -- never a substantive rule,
+# enforcement action, sanctions determination, or export restriction. Confirmed live:
+# 4 of these (DOL/OWCP notices about workers'-comp claims processing, unrelated to
+# any held company's actual business) were promoted to "confirmed" GOOGL alerts.
+# A company merely co-occurring with this boilerplate is structurally different from
+# a company directly named IN a sanctions order or enforcement action -- the latter
+# is itself inherently significant (government filings rarely namedrop companies
+# incidentally); the former is not, since this exact boilerplate repeats verbatim
+# across thousands of unrelated notices regardless of which company you check against.
+_ROUTINE_NOTICE_TITLE_PATTERNS = (
+    re.compile(r"\bagency information collection activities\b", re.IGNORECASE),
+    re.compile(r"\binformation collection request\b", re.IGNORECASE),
+    re.compile(r"\bsubmission for (?:omb|office of management and budget) review\b", re.IGNORECASE),
+    re.compile(r"\bpaperwork reduction act\b", re.IGNORECASE),
+    re.compile(r"\bcomment request\b", re.IGNORECASE),
+)
+
+
+def is_routine_administrative_notice(title: str) -> bool:
+    """True if `title` matches the recurring Federal Register/OMB routine-paperwork
+    notice pattern -- see `_ROUTINE_NOTICE_TITLE_PATTERNS`. Used to require stronger,
+    company-specific evidence before such a document can produce a confirmed alert,
+    even when it directly names a held company (see `alerts.verification.classify_match`)."""
+    if not title:
+        return False
+    return any(pattern.search(title) for pattern in _ROUTINE_NOTICE_TITLE_PATTERNS)
 
 
 def is_false_positive_occurrence(word: str, text: str, start: int, end: int) -> bool:

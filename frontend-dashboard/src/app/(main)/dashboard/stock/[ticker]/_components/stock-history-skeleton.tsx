@@ -1,14 +1,15 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { PricePanel } from "./price-panel";
 
-export function StockHistorySkeleton({ symbol, period }: { symbol: string; period: string }) {
+export function StockHistorySkeleton({ symbol, period, source }: { symbol: string; period: string; source: string }) {
   return (
     <PricePanel
+      source={source}
       symbol={symbol}
       period={period}
-      name={<Skeleton className="h-4 w-24" />}
+      name={<Skeleton className="block h-9 w-44" />}
       market={<Skeleton className="mt-1 h-3 w-20" />}
-      price={<Skeleton className="h-7 w-28" />}
+      price={<Skeleton className="h-10 w-32" />}
     >
       <div role="status" aria-label="Loading stock prices" className="flex h-72 flex-col justify-between py-3 sm:h-96">
         {[0, 1, 2, 3, 4].map((tick) => (

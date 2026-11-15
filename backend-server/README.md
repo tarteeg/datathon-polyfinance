@@ -55,10 +55,14 @@ curl 'http://localhost:8000/articles?tickers=NVDA&limit=10'
 curl 'http://localhost:8000/article/your-article-slug'
 ```
 
+For example, `GET /articles?tickers=NVDA&source=Reuters&include_sources=true` returns matching articles plus the available publishers for NVDA. The source filter is applied before the limit.
+
 The list accepts `search`, comma-separated `tickers` and `sectors`, `sentiment`,
 `hours` (1–720), `only_with_tickers` (default true), and `limit` (1–500, default 20).
 A successful lookup with no matches returns an empty list or a null article.
-Upstream failures return HTTP 502.
+Portfolio impact requires the StocksFeed exact-URL route (`GET /article?url=…`). It returns the saved body and `source_content_type` (`full`, `excerpt`, or null on legacy records). Deploy the matching StocksFeed API change when pointing at a hosted feed. The dashboard-authenticated `POST /headlines/impact` runs Bedrock on the selected article and current portfolio. An incomplete model answer returns HTTP 502 so a later click can retry.
+
+Upstream failures return HTTP 502. When StocksFeed supplies an `image_url`, the dashboard uses it as the article thumbnail. To use a local StocksFeed API, set `STOCKSFEED_BASE_URL` in the backend’s `.env` to its origin and restart the backend.
 
 `GET /stocks/most-mentioned?sector=Technology&limit=10` returns S&P 500
 companies ranked by distinct article URLs collected over the past 24 hours.
@@ -100,3 +104,14 @@ Run the calculation and verification tests from this directory:
 python -m pip install -r requirements-dev.txt
 python -m pytest tests
 ```
+
+## BreakPoint AI
+
+Use `POST /decision-lab/analyze` for a fictional daily-rebalanced SPY/TLT portfolio. Weights, loss limit, shock and metric fields use percentage units. Contributions use percentage points. Dates are inclusive and default to calendar 2022. The default principal is USD 10,000.
+
+```sh
+curl -s http://localhost:8000/decision-lab/analyze -H 'Content-Type: application/json' \
+  -d '{"weights":{"SPY":60,"TLT":40},"asset":"TLT","shock_pct":-13,"loss_limit_pct":5}'
+```
+
+The response contains a −5.2% (−$520) instantaneous scenario and a −12.5% TLT threshold. A 12.5% decline reaches the limit exactly. A larger decline crosses it. Invalid inputs return 422. Missing adjusted prices or incompatible currencies return a valid scenario with a null replay and an explicit coverage error. Run `python -m pytest tests/test_decision_lab.py` after installing `requirements-dev.txt`. See the [calculation methodology](../ARCHITECTURE.md#breakpoint-ai).

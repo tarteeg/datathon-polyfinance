@@ -7,11 +7,12 @@ I forked [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard
 - Sign up or sign in with your email and password. Each account has its own portfolio.
 - Search for an S&P 500 stock and add it to your portfolio. You can leave the number of shares blank or edit it later on Home.
 - Open a stock to see its current price, change the period on its price chart, and read related news.
+- Open **Portfolio News** in the sidebar to browse coverage for your holdings or switch to all symbols.
 - On Home, use the Discover table to see which stocks appear most often in the news. It counts distinct articles from the past 24 hours, and you can filter by company sector.
 - Open Finance chat in the sidebar for general finance Q&A. Expand Finance chat in the sidebar to start a chat or search saved threads grouped by date. Each thread has a link you can reopen.
 - Click your name in the sidebar or the settings button in the header to change your name, password, or dashboard preferences.
 
-The Studio Admin example dashboards and pages (CRM, Finance, Analytics, Kanban, Mail and others) have been removed. Only `home`, `chat` and `stock/[ticker]` remain under `src/app/(main)/dashboard/`.
+The Studio Admin example dashboards and pages (CRM, Finance, Analytics, Kanban, Mail and others) have been removed.
 
 See [how the dashboard, API, and database work together](../ARCHITECTURE.md).
 
@@ -27,6 +28,10 @@ npm run portfolio:migrate
 npm run chat:migrate
 ```
 
+On an existing database, rerun `npm run portfolio:migrate` to create the per-account headline analysis cache.
+
+On an existing database, rerun `npm run auth:migrate` to add the optional investor persona to user accounts.
+
 Start the dashboard with `npm run dev` and open [localhost:3000](http://localhost:3000).
 
 ## Finance chat setup
@@ -38,3 +43,9 @@ Select **Explain this chart** on a stock page to save its current chart in a new
 Ask Finance chat for recent news about a company, ticker, topic, or the broader market. News replies link to original publishers. Follow-ups can refer to stories by number after reopening the thread.
 
 Ask for a company’s latest quote or performance over a supported period, then ask follow-ups about the figures in the same thread. Stock replies cite Yahoo Finance and include the quote timestamp when available.
+
+## BreakPoint AI
+
+Sign in and use **BreakPoint AI** in the sidebar, or open [the decision lab](http://localhost:3000/dashboard/decision-lab). The fictional USD 10,000 portfolio starts at 60% SPY and 40% TLT. Move the TLT decline to 12.5% to reach the shared 5% loss limit, then to 13% to cross it. Change the allocation or dates to recalculate the historical chart. Expand the evidence below the chart for source dates, contributions and correlation.
+
+Robert and Amira compare the same scenario. Select Mateo to discuss stability and the missing ESG evidence. **Explain in Finance chat** opens a saved thread using the existing Bedrock configuration and tool timeline. The dashboard calculations run independently of Bedrock.

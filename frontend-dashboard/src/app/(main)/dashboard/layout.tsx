@@ -19,6 +19,7 @@ import { PortfolioPrice } from "./_components/sidebar/portfolio-price";
 
 export default async function Layout({ children }: Readonly<{ children: ReactNode }>) {
   const { user } = await requireSession();
+  const profile = { name: user.name, email: user.email, avatar: user.image ?? "", investorPersona: user.investorPersona };
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
   const [variant, collapsible, holdings] = await Promise.all([
@@ -43,7 +44,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
           ticker,
           price: <Suspense key={ticker} fallback="…"><PortfolioPrice ticker={ticker} /></Suspense>,
         }))}
-        user={{ name: user.name, email: user.email, avatar: user.image ?? "" }}
+        user={profile}
       />
       <SidebarInset
         className={cn(
@@ -72,7 +73,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
               <SearchDialog />
             </div>
             <div className="flex items-center gap-2">
-              <SettingsDialog user={{ name: user.name, email: user.email, avatar: user.image ?? "" }} />
+              <SettingsDialog user={profile} />
               <ThemeSwitcher />
             </div>
           </div>
