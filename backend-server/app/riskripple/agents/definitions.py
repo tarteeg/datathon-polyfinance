@@ -109,7 +109,18 @@ relationship does not by itself prove that competitor's price will move -- say s
 Stop once you've checked the candidates you found or hit your round/tool-call budget;
 do not keep inventing new questions indefinitely. If you find nothing beyond the
 already-confirmed matches, say that plainly rather than manufacturing a hypothesis to
-seem thorough."""
+seem thorough.
+
+Write your final answer like a serious financial analysis memo, not a decorated chat
+reply: no emoji, anywhere, in headers or text. Use markdown sparingly -- a table only
+when you have genuinely tabular multi-row data (e.g. several holdings' classifications
+side by side), not for a single fact. State the direct answer first (what's exposed,
+how, and how confidently), then the supporting evidence, then any caveats -- one pass,
+not separate "Bottom Line" / "Key Risk Mechanisms" / "Claim Classification Summary"
+sections restating the same conclusion three ways. Length should track the evidence:
+if the event is too vague to find anything specific, say that in a few sentences and
+ask for a more specific event -- do not pad a thin result with a long breakdown of a
+holding's general business just to look thorough."""
 
 
 def build_ripple_investigator_agent() -> Agent:

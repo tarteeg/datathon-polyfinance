@@ -2,6 +2,8 @@
 
 import { ArrowDownRight, Loader2, Search, Wrench } from "lucide-react";
 import { useId, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Table, TableCell, TableHead } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Trace,
@@ -21,6 +24,29 @@ import {
 } from "@/components/ui/trace";
 import { runInvestigation } from "@/server/investigate-actions";
 import type { InvestigateResult } from "@/server/riskripple";
+
+// Matches the finance-chat reply's markdown pattern (dashboard/chat/_components/finance-reply.tsx)
+// for visual consistency -- the agent's answer is real markdown, not plain text.
+function AnswerMarkdown({ text }: { text: string }) {
+  return (
+    <Markdown
+      remarkPlugins={[remarkGfm]}
+      skipHtml
+      disallowedElements={["img"]}
+      components={{
+        table: ({ children }) => <Table>{children}</Table>,
+        td: ({ children }) => <TableCell className="whitespace-normal">{children}</TableCell>,
+        th: ({ children }) => (
+          <TableHead scope="col" className="whitespace-normal">
+            {children}
+          </TableHead>
+        ),
+      }}
+    >
+      {text}
+    </Markdown>
+  );
+}
 
 export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) {
   const id = useId();
@@ -99,7 +125,9 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
             {result.error ? (
               <p className="text-destructive text-sm">{result.error}</p>
             ) : (
-              <p className="text-sm whitespace-pre-wrap">{result.answer}</p>
+              <div className="text-sm [&>*+*]:mt-2">
+                <AnswerMarkdown text={result.answer} />
+              </div>
             )}
 
             {!!result.trace.length && (

@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from app.riskripple.alerts.db import get_all_portfolios
 from app.riskripple.alerts.pipeline import run_alert_scan
 from app.riskripple.ingestion import macro_fred, news_stocksfeed, regulatory_events, sanctions_gac, sanctions_ofac
+from app.riskripple.tools.research_tools import extract_candidate_entities
 
 router = APIRouter(prefix="/riskripple", tags=["riskripple"])
 
@@ -149,6 +150,32 @@ def investigate(request: InvestigateRequest):
     reflexively tied to chips either. Returns the agent's final answer plus a trace of
     every tool call it made (tool name, input, result) for UX/explainability.
     """
+    # Cheap pre-check before the ~60s Bedrock agent run: does this event description
+    # name anything specific enough to investigate (a proper noun, a material, a
+    # sanctions-relevant term -- the same allowlist the exposure graph itself uses),
+    # or is it a bare category word like "suppliers" with nothing to trace a ripple
+    # from? Confirmed live: "suppliers" alone ran the full multi-tool agent loop for
+    # ~60s only to conclude, in its own final answer, that it had nothing to go on.
+    # Reusing extract_candidate_entities here (rather than a separate heuristic) means
+    # this guard and the exposure graph agree on what counts as "specific" by
+    # construction.
+    candidates = extract_candidate_entities(request.event_description, max_candidates=5)
+    if not request.event_description.strip() or not candidates:
+        return {
+            "event_description": request.event_description,
+            "portfolio_holdings": request.portfolio_holdings,
+            "answer": (
+                "This event description doesn't name anything specific enough to investigate "
+                "(a company, material, technology, sanctioned country, or named regulation). "
+                "Try something like: \"New export controls restrict advanced semiconductor "
+                "chips to China\" or \"EPA coal combustion residuals rule affecting coal-fired "
+                "power plants.\""
+            ),
+            "trace": [],
+            "error": None,
+            "too_vague": True,
+        }
+
     try:
         from app.riskripple.agents.definitions import build_ripple_investigator_agent
     except Exception as exc:
