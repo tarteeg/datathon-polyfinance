@@ -1,4 +1,4 @@
-import { House, type LucideIcon, MessageSquare, Newspaper, ShieldAlert } from "lucide-react";
+import { Gauge, House, type LucideIcon, MessageSquare, Newspaper, ShieldAlert } from "lucide-react";
 
 export interface NavSubItem {
   id: string;
@@ -39,6 +39,7 @@ export const sidebarItems: NavGroup[] = [
     id: 3,
     items: [
       { id: "home", title: "Home", url: "/dashboard/home", icon: House },
+      { id: "decision-lab", title: "BreakPoint AI", url: "/dashboard/decision-lab", icon: Gauge },
       { id: "chat", title: "Finance chat", url: "/dashboard/chat", icon: MessageSquare },
     ],
   },

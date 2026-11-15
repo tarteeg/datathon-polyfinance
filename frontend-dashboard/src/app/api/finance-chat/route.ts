@@ -10,6 +10,7 @@ import { getSession } from "@/lib/session";
 const payload = z.object({
   threadId: z.uuid(),
   question: z.string().trim().min(1).max(4000),
+  decisionLab: z.record(z.string(), z.unknown()).optional(),
   lastTurn: z.number().int().nonnegative(),
 });
 
@@ -53,7 +54,8 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "application/json", "X-Chat-Key": process.env.CHAT_API_KEY ?? "" },
     body: JSON.stringify({
       question,
-      holdings: await getHoldings(),
+      decision_lab: parsed.data.decisionLab,
+      holdings: parsed.data.decisionLab ? undefined : await getHoldings(),
       history: recent.rows.reverse().map(({ question, answer }) => ({ question, answer: savedChatAnswer(answer) })),
       chart: snapshot?.facts,
       previous_news: previous.rows[0]?.news_snapshot,

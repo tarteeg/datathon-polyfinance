@@ -13,12 +13,22 @@ from pydantic import BaseModel, Field
 from app.integrations.stocksfeed.service import StocksFeedError
 from app.integrations.yahoo import service as yahoo
 from app.modules.chat.discovery import COMPARE_TOOL, DISCOVER_TOOL, CompanyDiscovery, StockComparison, comparison_queries, discover
+from app.modules.headlines.impact import ImpactRequest, analyze, impact
 from app.modules.chat.stock import STOCK_TOOL, StockQuery, lookup_stock, stock_source
 from app.modules.chat.portfolio import PORTFOLIO_TOOL, Holding, PortfolioQuery, portfolio_snapshot
 from app.modules.chat.news import NEWS_TOOL, NewsQuery, search_news, source_list
 from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANALYSIS_TOOLS, run_analysis_tool
 from app.modules.verification.ledger import EvidenceLedger
 from app.modules.verification.step import verification_activity, verification_started
+
+from app.modules.decision_lab.schemas import LabRequest
+from app.modules.decision_lab.service import analyze as analyze_breakpoint
+
+BREAKPOINT_TOOL = {"toolSpec": {
+    "name": "analyze_breakpoint",
+    "description": "Retrieve the daily-rebalanced replay and instantaneous single-asset shock for the attached BreakPoint dashboard settings.",
+    "inputSchema": {"json": {"type": "object", "properties": {}}},
+}}
 
 router = APIRouter()
 
@@ -33,6 +43,7 @@ class ChatRequest(BaseModel):
     holdings: list[Holding] | None = None
     previous_stock: dict | None = None
     previous_news: dict | None = None
+    decision_lab: LabRequest | None = None
     chart: dict | None = None
     history: list[Exchange] = Field(max_length=10)
 
@@ -49,10 +60,14 @@ def bedrock():
     return boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION"))
 
 
-def model_for_request(x_chat_key: str):
+def require_dashboard(x_chat_key: str):
     key = os.getenv("CHAT_API_KEY")
     if not key or not secrets.compare_digest(x_chat_key.encode(), key.encode()):
         raise HTTPException(403, "Dashboard authentication required.")
+
+
+def model_for_request(x_chat_key: str):
+    require_dashboard(x_chat_key)
     model = os.getenv("BEDROCK_MODEL_ID")
     if not model:
         raise HTTPException(503, "Bedrock model is not configured.")
@@ -110,17 +125,29 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         "Avoid personalized investment recommendations. After any necessary tool calls, write your ENTIRE final "
         "response as a single valid OpenUI expression. No surrounding prose, code fences or extra statements. "
         "The registered root component signature is FinanceAnswer(title: string, explanation: string, "
-        "headers: string[], rows: string[][]). All four arguments are POSITIONAL JSON literals with double quotes. "
+        "headers: string[], rows: string[][], followUps: string[]). All five arguments are positional JSON literals. "
+        "For followUps generate two or three short, distinct questions the user could ask next, in the user's "
+        "language, grounded in THIS answer and answerable with available tools. Write from the user's perspective. "
+        "Avoid repeating answered questions or suggesting trades. Use [] when there is no useful continuation. "
         "Begin with root = FinanceAnswer(...). For stock performance use a concise takeaway in explanation, then "
         "headers such as [\"Metric\",\"Value\"] and one row per supplied price, change or range. For comparisons "
         "use a column for each option. Use equal-width rows. Never put pipe tables in explanation. "
         "For a simple conversational answer or news summary use empty arrays for headers and rows. "
         'Example: root = FinanceAnswer("Price range", "The observed low and high are shown below.", '
-        '["Metric", "Value"], [["Period low", "USD 10"], ["Period high", "USD 12"]]) '
+        '["Metric", "Value"], [["Period low", "USD 10"], ["Period high", "USD 12"]], ["How does that range compare with last month?"]) '
         "Use actual evidence instead of the example values. A period high and low on different days are not "
         "a single-candle move. Only discuss the biggest candle move when explicitly provided."
 
     )}]
+    if request.decision_lab:
+        system.append({"text": (
+            "Explain the attached fictional BreakPoint scenario using only the figures returned by analyze_breakpoint. "
+            "Percent fields are already percentages. Compare the replay's peak-to-trough drawdown with the editable loss limit, "
+            "then explain the instantaneous shock with the other ETF held flat. Distinguish reaching from exceeding. "
+            "Use the selected persona: Robert prioritizes preservation over 3–5 years; Amira values growth and diversification over 15+ years; "
+            "Mateo balances growth and stability over 8–12 years and cares about ESG, for which this tool has no evidence. "
+            "The limit is the user's assumption. Name the price source and actual coverage. Never infer forecasts or recovery dates."
+        )})
     news = None
     stocks = []
     searches = []
@@ -134,8 +161,13 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         if request.holdings is not None:
             available.append(PORTFOLIO_TOOL)
         tools = {"toolConfig": {"tools": available}}
-        for _ in range(8):
-            answer, calls = yield from model_events(args, tools, streaming)
+        if request.decision_lab:
+            tools = {"toolConfig": {"tools": [BREAKPOINT_TOOL]}}
+        for round_index in range(8):
+            options = tools
+            if request.decision_lab and round_index == 0:
+                options = {"toolConfig": {**tools["toolConfig"], "toolChoice": {"tool": {"name": "analyze_breakpoint"}}}}
+            answer, calls = yield from model_events(args, options, streaming)
             if not calls:
                 break
             messages.append({"role": "assistant", "content": [{"toolUse": call} for call in calls]})
@@ -146,6 +178,8 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                             "ticker", "tickers", "period", "sector", "comparison_period", "hours", "view", "limit", "topic", "show_chart",
                             *ACTIVITY_INPUTS,
                         }}}
+                if call["name"] == "analyze_breakpoint" and request.decision_lab:
+                    step["input"] = request.decision_lab.model_dump(mode="json")
                 if streaming:
                     yield {"activity": {**step, "status": "running"}}
                 status = "completed"
@@ -201,6 +235,13 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                     except (ValueError, StocksFeedError):
                         status = "failed"
                         evidence.append({"news lookup unavailable": call["input"]})
+                elif call["name"] == "analyze_breakpoint" and request.decision_lab:
+                    lab = analyze_breakpoint(request.decision_lab)
+                    summary = lab.model_dump(exclude={"replay": {"series"}})
+                    step["result"] = summary
+                    evidence.append({"settings": step["input"], "result": summary})
+                    if lab.replay_error:
+                        status = "partial"
                 elif call["name"] in ANALYSIS_TOOL_NAMES:
                     calculation, status = run_analysis_tool(call["name"], call["input"], request.holdings)
                     evidence.append({"AlphaForge calculation": calculation})
@@ -289,7 +330,7 @@ def model_events(args, options, streaming):
     if not calls and not emitted:
         raise HTTPException(502, "The assistant returned an invalid answer.")
     for call in calls.values():
-        call["input"] = json.loads(call["input"])
+        call["input"] = json.loads(call["input"] or "{}")
     return text, list(calls.values())
 
 
@@ -315,3 +356,16 @@ def stream_chat(request: ChatRequest, x_chat_key: str = Header(default="")):
 
     return StreamingResponse(lines(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"})
+
+
+@router.post("/headlines/impact")
+def headline_impact(request: ImpactRequest, x_chat_key: str = Header(default="")):
+    model = model_for_request(x_chat_key)
+    try:
+        result = impact(request)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    try:
+        return analyze(request, result, model, bedrock())
+    except (ValueError, KeyError, TypeError, BotoCoreError, ClientError) as error:
+        raise HTTPException(502, "Bedrock could not complete the headline analysis.") from error

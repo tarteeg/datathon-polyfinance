@@ -5,6 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 
 import { type Article, ArticleDialog } from "./article-dialog";
+import { ArticleThumbnail } from "./article-thumbnail";
+
+import { HeadlineImpact } from "./headline-impact";
 
 const sentimentStyles: Record<string, string> = {
   positive: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
@@ -78,7 +81,8 @@ export async function StockNews({
             role="listitem"
             className="group-data-[view=rows]/news:rounded-none group-data-[view=rows]/news:border-0 group-data-[view=rows]/news:border-b group-data-[view=rows]/news:border-border group-data-[view=rows]/news:px-0 group-data-[view=rows]/news:py-4 group-data-[view=rows]/news:last:border-b-0 group-data-[view=cards]/news:items-start group-data-[view=cards]/news:border-border group-data-[view=cards]/news:bg-card group-data-[view=cards]/news:p-4"
           >
-            <ItemContent className="gap-2">
+            {article.image_url && <ArticleThumbnail key={article.image_url} src={article.image_url} />}
+            <ItemContent className="min-w-0 gap-2">
               <ItemDescription className="flex flex-wrap items-center gap-x-2 text-xs">
                 {Number.isFinite(published) && (
                   <time dateTime={new Date(published).toISOString()} className="border-r pr-2">
@@ -95,6 +99,12 @@ export async function StockNews({
                 <ArticleDialog article={article} source={source} badges={badges} />
               </ItemTitle>
               {badges}
+              {["https:", "http:"].includes(URL.parse(article.url)?.protocol ?? "") && (
+                <HeadlineImpact headline={{
+                  title: article.title, url: article.url,
+                  published: Number.isFinite(published) ? new Date(published).toISOString().slice(0, 10) : null,
+                }} />
+              )}
             </ItemContent>
           </Item>
         );

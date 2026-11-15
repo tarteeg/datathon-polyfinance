@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ExternalLink, History, Loader2, ShieldAlert } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -184,12 +184,10 @@ export function InvestigationsWorkspace({
   const lastSuccess = [news.last_success_at, regulatory.last_success_at].filter(Boolean).sort().pop() ?? null;
   const anyScanning = news.status === "scanning" || regulatory.status === "scanning";
 
-  const tickers = useMemo(() => {
-    const set = new Set<string>();
-    for (const m of [...confirmed, ...candidates]) if (m.symbol) set.add(m.symbol);
-    for (const h of history ?? []) for (const t of h.portfolio_holdings) set.add(t);
-    return [...set].sort();
-  }, [confirmed, candidates, history]);
+  const tickerSet = new Set<string>();
+  for (const m of [...confirmed, ...candidates]) if (m.symbol) tickerSet.add(m.symbol);
+  for (const h of history ?? []) for (const t of h.portfolio_holdings) tickerSet.add(t);
+  const tickers = [...tickerSet].sort();
 
   function matchesTicker(symbol: string | undefined, holdings?: string[]) {
     if (tickerFilter === "all") return true;

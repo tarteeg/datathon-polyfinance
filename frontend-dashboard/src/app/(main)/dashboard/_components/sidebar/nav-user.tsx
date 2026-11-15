@@ -10,16 +10,12 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui
 import { authClient } from "@/lib/auth-client";
 import { getInitials } from "@/lib/utils";
 
-import { SettingsDialog } from "../header/settings-dialog";
+import { type Profile, SettingsDialog } from "../header/settings-dialog";
 
 export function NavUser({
   user,
 }: {
-  readonly user: {
-    readonly name: string;
-    readonly email: string;
-    readonly avatar: string;
-  };
+  readonly user: Profile;
 }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
 

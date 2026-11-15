@@ -17,6 +17,7 @@ export type ChatActivity = {
   id: string;
   tool: string;
   input: Record<string, unknown>;
+  result?: Record<string, unknown>;
   status: "running" | "completed" | "partial" | "failed";
   output?: FigureCheck;
 };

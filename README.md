@@ -2,7 +2,7 @@
 
 Projet d'équipe pour le Datathon PolyFinances 2026, proposé avec la Banque Nationale et propulsé par AWS. Le défi AlphaForge AI demande de concevoir un outil qui utilise l'IA générative, les agents et des données financières publiques pour éclairer une décision d'investissement, selon trois personas fictifs : Prudent, Équilibré et Audacieux.
 
-> Le tableau de bord Next.js et l’API FastAPI sont en place. Les fonctionnalités AlphaForge AI décrites dans l’approche prévue restent à développer.
+> Le tableau de bord Next.js et l’API FastAPI sont en place. BreakPoint AI est accessible depuis la barre latérale du tableau de bord.
 
 ## Contraintes du défi
 
@@ -14,7 +14,7 @@ L'énoncé officiel fait foi et peut être précisé par les organisateurs sur p
 
 ## Approche prévue
 
-Le code calcule, le modèle explique. Rendements, volatilité et corrélations sont calculés avec pandas, puis un modèle de langage les met en contexte à partir de ces chiffres. On utilise les prix ajustés (`adj_close`) et on évite le biais d'anticipation (dates de publication plutôt que dates de fin de trimestre). La décision précise à éclairer et la comparaison de deux personas restent à définir.
+Le code calcule, le modèle explique. Rendements, volatilité et corrélations sont calculés avec pandas, puis un modèle de langage les met en contexte à partir de ces chiffres. On utilise les prix ajustés (`adj_close`) et on évite le biais d'anticipation (dates de publication plutôt que dates de fin de trimestre). BreakPoint AI permet de déterminer à partir de quelle baisse d’un FNB une limite de perte est atteinte, puis de comparer le scénario au recul historique d’un portefeuille SPY/TLT en 2022. Robert et Amira utilisent la même limite modifiable.
 
 ## Pile technique envisagée
 

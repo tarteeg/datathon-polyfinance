@@ -49,12 +49,20 @@ def utc_now() -> str:
 
 
 def adjusted_closes(symbol: str, years: int) -> dict:
+    return _adjusted_history(symbol, {"period": f"{years}y"})
+
+
+def adjusted_closes_between(symbol: str, start: str, end_exclusive: str) -> dict:
+    return _adjusted_history(symbol, {"start": start, "end": end_exclusive})
+
+
+def _adjusted_history(symbol: str, window: dict) -> dict:
     """Daily closes adjusted for splits and dividends, oldest first."""
 
     def load():
         try:
             ticker = yf.Ticker(yahoo_symbol(symbol))
-            frame = ticker.history(period=f"{years}y", interval="1d", auto_adjust=True, actions=False, timeout=10)
+            frame = ticker.history(**window, interval="1d", auto_adjust=True, actions=False, timeout=10)
             currency = (ticker.history_metadata or {}).get("currency")
         except (YFTickerMissingError, YFRateLimitError) as exc:
             raise AnalysisDataError(f"Yahoo Finance returned no history for {symbol}.") from exc
@@ -70,7 +78,7 @@ def adjusted_closes(symbol: str, years: int) -> dict:
             "retrieved": utc_now(),
         }
 
-    return _cached(("closes", symbol.upper(), years), load)
+    return _cached(("closes", symbol.upper(), tuple(window.items())), load)
 
 
 def _normalize_sector(name: str) -> str:

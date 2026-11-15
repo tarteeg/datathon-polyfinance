@@ -24,6 +24,7 @@ export type Article = {
   importance_reasoning?: string | null;
   url: string;
   title: string;
+  image_url?: string | null;
   source?: string | null;
   sentiment?: string | null;
   importance_score?: number | null;
