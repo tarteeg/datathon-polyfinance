@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass
 
 from app.riskripple.tools.exposure_tools import KNOWN_COMPANY_NAMES
+from app.riskripple.tools.research_tools import is_false_positive_occurrence
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -39,7 +40,17 @@ class RelevanceMatch:
 
 
 def _word_match(alias: str, text: str) -> re.Match | None:
-    return re.search(rf"\b{re.escape(alias)}\b", text, re.IGNORECASE)
+    """Word-boundary, case-insensitive search for `alias` in `text`, skipping any
+    occurrence that's actually part of a known unrelated phrase (e.g. "silicon"
+    inside "Silicon Valley") -- defense-in-depth alongside the candidate-extraction
+    filter in research_tools.py, for the case where a node exists for a legitimate
+    reason but this particular document's only literal mention is the false-positive
+    phrase. A genuine second occurrence of the same word elsewhere in the text is
+    still found."""
+    for match in re.finditer(rf"\b{re.escape(alias)}\b", text, re.IGNORECASE):
+        if not is_false_positive_occurrence(alias, text, match.start(), match.end()):
+            return match
+    return None
 
 
 def _sentence_containing(text: str, match: re.Match) -> str:

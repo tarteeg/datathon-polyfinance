@@ -198,6 +198,21 @@ _GENERIC_CATEGORY_TERMS = frozenset({
 
 _SINGLE_WORD_ALLOWLIST = _SPECIFIC_SINGLE_WORD_TERMS | _GENERIC_CATEGORY_TERMS
 
+# Curated false-positive phrases for an allowlisted term that is also part of a
+# well-known phrase meaning something unrelated -- confirmed live: a real Airbnb/
+# Chesky article mentioning "Silicon Valley" (the place) got "silicon" extracted as
+# a candidate and then treated as unverified material evidence for AMD/NVDA, because
+# "silicon" is in _SPECIFIC_SINGLE_WORD_TERMS and a specific-term match skips Stage-2
+# verification entirely (classify_match treats it as already-real evidence). Same
+# minimal, curated-exclusion philosophy as every other denylist in this file: a
+# short, explicit list of known false-positive phrases per ambiguous term, not a
+# general word-sense disambiguation model. Only covers a term's occurrence when it's
+# immediately followed by the disambiguating word -- a genuine standalone mention of
+# the material elsewhere in the same text is unaffected.
+_AMBIGUOUS_TERM_FALSE_POSITIVE_PHRASES: dict[str, tuple[str, ...]] = {
+    "silicon": ("silicon valley",),
+}
+
 
 def is_generic_category_term(word: str) -> bool:
     """True if `word` (any case) is a generic industry/geography/mechanism category
@@ -205,11 +220,24 @@ def is_generic_category_term(word: str) -> bool:
     return word.lower() in _GENERIC_CATEGORY_TERMS
 
 
+def is_false_positive_occurrence(word: str, text: str, start: int, end: int) -> bool:
+    """True if this specific occurrence of `word` at `text[start:end]` is actually
+    part of a known unrelated phrase (see `_AMBIGUOUS_TERM_FALSE_POSITIVE_PHRASES`),
+    not a real mention of the thing `word` otherwise denotes."""
+    phrases = _AMBIGUOUS_TERM_FALSE_POSITIVE_PHRASES.get(word.lower())
+    if not phrases:
+        return False
+    window = text[start : end + 20].lower()
+    return any(window.startswith(phrase) for phrase in phrases)
+
+
 def _single_word_candidates(text: str, max_candidates: int) -> list[str]:
     seen: dict[str, None] = {}
     for raw_match in _SINGLE_WORD_RE.finditer(text):
         word = raw_match.group(0)
         if word.lower() not in _SINGLE_WORD_ALLOWLIST:
+            continue
+        if is_false_positive_occurrence(word, text, raw_match.start(), raw_match.end()):
             continue
         # Keep the term as it actually appears (preserves case for proper nouns like
         # "Russia"; lowercase common nouns like "titanium" stay lowercase) -- the
