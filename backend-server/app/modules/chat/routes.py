@@ -66,15 +66,33 @@ def guardrail_config(streaming: bool) -> dict:
     if not guardrail_id:
         return {}
     config = {"guardrailIdentifier": guardrail_id, "guardrailVersion": os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")}
+    # Without the trace, a streamed reply blocked on output can end with stopReason "end_turn",
+    # so the trace is the reliable signal that the guardrail replaced the answer.
+    config["trace"] = "enabled"
     if streaming:
         # "sync" checks each chunk before it is sent, so blocked text never reaches the user.
         config["streamProcessingMode"] = "sync"
     return {"guardrailConfig": config}
 
 
+def guardrail_blocked(trace: dict | None) -> bool:
+    """True when any guardrail assessment in a Converse trace blocked the turn."""
+    def blocked(node) -> bool:
+        if isinstance(node, dict):
+            return node.get("action") == "BLOCKED" or any(blocked(value) for value in node.values())
+        if isinstance(node, list):
+            return any(blocked(value) for value in node)
+        return False
+
+    return blocked((trace or {}).get("guardrail"))
+
+
+BLOCKED_PREFIX = f"root = FinanceAnswer({json.dumps('Demande non traitée', ensure_ascii=False)}, "
+
+
 def blocked_answer(message: str) -> str:
     """Wrap the guardrail's refusal in the expression the dashboard renders."""
-    return f"root = FinanceAnswer({json.dumps('Demande non traitée', ensure_ascii=False)}, {json.dumps(message, ensure_ascii=False)}, [], [], [])"
+    return f"{BLOCKED_PREFIX}{json.dumps(message, ensure_ascii=False)}, [], [], [])"
 
 
 def require_dashboard(x_chat_key: str):
@@ -297,6 +315,9 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
                  "history": [exchange.model_dump() for exchange in request.history]}
         yield {"activity": verification_started()}
         yield {"activity": verification_activity(answer, ledger, question=request.question, references=saved)}
+    if answer.startswith(BLOCKED_PREFIX):
+        # A refusal cites nothing, so drop the sources and snapshots gathered before the guardrail stopped it.
+        news, stocks, rankings, portfolio = None, [], [], None
     footer = (source_list(news) if news and news["stories"] else "") + "".join(stock_source(item) for item in stocks)
     for ranking in rankings:
         footer += f"\n\nStocksFeed · {ranking['sector'] or 'All sectors'} · Last {ranking['hours']} hours · {ranking['asOf']}"
@@ -312,7 +333,7 @@ def model_events(args, options, streaming):
         result = bedrock().converse(**args, **options)
         blocks = result["output"]["message"]["content"]
         text = "".join(block.get("text", "") for block in blocks)
-        if result.get("stopReason") == "guardrail_intervened":
+        if result.get("stopReason") == "guardrail_intervened" or guardrail_blocked(result.get("trace")):
             text = blocked_answer(text)
             yield {"delta": text}
             return text, []
@@ -330,6 +351,7 @@ def model_events(args, options, streaming):
     emitted = 0
     calls = {}
     stop = None
+    blocked = False
     try:
         for event in stream:
             if "contentBlockStart" in event:
@@ -352,12 +374,17 @@ def model_events(args, options, streaming):
                         emitted = len(text)
             elif "messageStop" in event:
                 stop = event["messageStop"]["stopReason"]
+            elif "metadata" in event:
+                blocked = blocked or guardrail_blocked(event["metadata"].get("trace"))
             elif any(key.endswith("Exception") for key in event):
                 raise HTTPException(502, "Bedrock interrupted the stream.")
     finally:
         stream.close()
-    if stop == "guardrail_intervened":
-        # In sync mode nothing was emitted, and `text` holds the guardrail's configured message.
+    if stop == "guardrail_intervened" or blocked:
+        if emitted:
+            # Sync mode should prevent this; never append a second answer to a partial one.
+            raise HTTPException(502, "The guardrail stopped the answer.")
+        # Nothing was emitted, and `text` holds the guardrail's configured message.
         text = blocked_answer(text)
         yield {"delta": text}
         return text, []
