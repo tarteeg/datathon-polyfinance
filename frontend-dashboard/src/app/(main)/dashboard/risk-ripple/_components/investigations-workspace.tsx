@@ -135,6 +135,7 @@ export function InvestigationsWorkspace({
   const [history, setHistory] = useState<InvestigationHistoryEntry[] | null>(null);
   const [prefill, setPrefill] = useState<Prefill | null>(initialPrefill ?? null);
   const [formOpen, setFormOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef(false);
 
@@ -336,30 +337,6 @@ export function InvestigationsWorkspace({
         </Card>
       )}
 
-      {(statusFilter === "all" || statusFilter === "history") && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <History className="size-4" />
-              Previously completed manual investigations
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {history === null ? (
-              <p className="text-muted-foreground text-sm">Loading…</p>
-            ) : filteredHistory.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No past manual investigations for this filter yet — run one below.
-              </p>
-            ) : (
-              filteredHistory.map((h, i) => (
-                <HistoryEntryItem key={h.created_at} entry={h} defaultOpen={i === 0} />
-              ))
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       <div ref={formRef}>
         <Collapsible open={formOpen} onOpenChange={setFormOpen}>
           <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-sm hover:underline">
@@ -371,6 +348,37 @@ export function InvestigationsWorkspace({
           </CollapsibleContent>
         </Collapsible>
       </div>
+
+      {/* Secondary review material, not the primary action -- moved below the form
+          and collapsed by default so it doesn't push the thing you actually came to
+          do (ask a new question) down the page. Explicitly filtering to "Past
+          investigations" still forces it open. */}
+      {(statusFilter === "all" || statusFilter === "history") && (
+        <Collapsible open={historyOpen || statusFilter === "history"} onOpenChange={setHistoryOpen}>
+          <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-sm hover:underline">
+            <ChevronDown className={`size-4 transition-transform ${historyOpen || statusFilter === "history" ? "" : "-rotate-90"}`} />
+            <History className="size-4" />
+            Previously completed manual investigations{history ? ` (${filteredHistory.length})` : ""}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2">
+            <Card>
+              <CardContent className="flex flex-col gap-4 pt-6">
+                {history === null ? (
+                  <p className="text-muted-foreground text-sm">Loading…</p>
+                ) : filteredHistory.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No past manual investigations for this filter yet — run one above.
+                  </p>
+                ) : (
+                  filteredHistory.map((h, i) => (
+                    <HistoryEntryItem key={h.created_at} entry={h} defaultOpen={i === 0} />
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </div>
   );
 }
