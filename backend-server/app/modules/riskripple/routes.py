@@ -7,6 +7,7 @@ tool surface was brought over -- finance and persona tooling are a separate pass
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, is_dataclass
 
 from fastapi import APIRouter, HTTPException, Query
@@ -160,7 +161,23 @@ def investigate(request: InvestigateRequest):
     # this guard and the exposure graph agree on what counts as "specific" by
     # construction.
     candidates = extract_candidate_entities(request.event_description, max_candidates=5)
-    if not request.event_description.strip() or not candidates:
+
+    # The candidate check alone misses a real case: a ticker is already given (so
+    # "which company" is already resolved), and the event describes a real incident
+    # type ("CEO fired", "plant explosion", "data breach") without naming a new
+    # entity/material itself. That's specific enough to investigate -- confirmed live:
+    # "ceo fired" + ticker "nvidia" was rejected by the candidate-only check even
+    # though it's the exact kind of scoped governance question this tool should
+    # answer. Allow it through when a ticker is given AND the event text has at least
+    # two substantive (non-trivial, non-stopword) words -- still blocks a bare
+    # one-word category ("suppliers", "news") even with a ticker given.
+    _TRIVIAL_WORDS = {"a", "an", "the", "of", "for", "and", "or", "in", "on", "to", "news", "event"}
+    substantive_words = [
+        w for w in re.findall(r"[A-Za-z]+", request.event_description) if w.lower() not in _TRIVIAL_WORDS
+    ]
+    is_scoped_incident = bool(request.portfolio_holdings) and len(substantive_words) >= 2
+
+    if not request.event_description.strip() or (not candidates and not is_scoped_incident):
         return {
             "event_description": request.event_description,
             "portfolio_holdings": request.portfolio_holdings,
