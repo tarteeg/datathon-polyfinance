@@ -66,7 +66,7 @@ function priorityBadgeVariant(priority: string): "default" | "secondary" | "outl
 
 // Attention-level vocabulary matches app/riskripple/briefing.py's ATTENTION_LEVELS
 // exactly -- this is a decision about where to look next, never a loss prediction.
-const ATTENTION_META: Record<string, { label: string; variant: "destructive" | "default" | "secondary" | "outline" }> = {
+export const ATTENTION_META: Record<string, { label: string; variant: "destructive" | "default" | "secondary" | "outline" }> = {
   ESCALATE: { label: "Escalate", variant: "destructive" },
   REVIEW: { label: "Review", variant: "default" },
   MONITOR: { label: "Monitor", variant: "secondary" },

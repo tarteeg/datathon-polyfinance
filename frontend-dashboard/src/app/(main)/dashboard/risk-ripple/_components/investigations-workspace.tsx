@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { getHistory, pollAlertsScan, triggerAlertsScan, type CombinedScanState } from "@/server/alerts-actions";
 import type { AlertMatch, InvestigationHistoryEntry, ScanResponse } from "@/server/riskripple";
 
-import { FindingsCards } from "./findings-cards";
+import { ATTENTION_META, FindingsCards } from "./findings-cards";
 import { InvestigateForm, type Prefill } from "./investigate-form";
 
 const POLL_INTERVAL_MS = 7000;
@@ -90,6 +90,33 @@ function MatchAccordionItem({ match, keyId }: { match: AlertMatch; keyId: string
         {match.recommendation && <p className="text-sm">{match.recommendation}</p>}
       </AccordionContent>
     </AccordionItem>
+  );
+}
+
+// Rendering every past investigation fully expanded, forever, buried the page under
+// repeated full briefings + per-stock findings + evidence for every single past query
+// -- confirmed by the user as "turns into a mess" after running just a few. Only the
+// newest survives expanded by default; everything older collapses to one line (date,
+// tickers, attention verdict, the event text) that expands on click.
+function HistoryEntryItem({ entry, defaultOpen }: { entry: InvestigationHistoryEntry; defaultOpen: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const attention = entry.result.event_briefing
+    ? ATTENTION_META[entry.result.event_briefing.attention_level] ?? ATTENTION_META.INSUFFICIENT_EVIDENCE
+    : null;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="border-border border-b pb-4 last:border-0 last:pb-0">
+      <CollapsibleTrigger className="flex w-full flex-wrap items-center gap-2 text-left text-sm hover:underline">
+        <ChevronDown className={`size-4 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <span className="text-muted-foreground text-xs">{new Date(entry.created_at).toLocaleString()}</span>
+        <Badge variant="outline" className="text-xs">{entry.portfolio_holdings.join(", ")}</Badge>
+        {attention && <Badge variant={attention.variant} className="text-xs">{attention.label}</Badge>}
+        <span className="flex-1 truncate font-medium">{entry.event_description}</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-3">
+        <FindingsCards result={entry.result} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -326,13 +353,7 @@ export function InvestigationsWorkspace({
               </p>
             ) : (
               filteredHistory.map((h, i) => (
-                <div key={i} className="border-border border-b pb-4 last:border-0 last:pb-0">
-                  <div className="text-muted-foreground mb-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span>{new Date(h.created_at).toLocaleString()}</span>
-                    <Badge variant="outline" className="text-xs">{h.portfolio_holdings.join(", ")}</Badge>
-                  </div>
-                  <FindingsCards result={h.result} />
-                </div>
+                <HistoryEntryItem key={h.created_at} entry={h} defaultOpen={i === 0} />
               ))
             )}
           </CardContent>

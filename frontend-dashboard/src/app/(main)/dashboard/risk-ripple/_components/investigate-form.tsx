@@ -9,9 +9,6 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { runInvestigation } from "@/server/investigate-actions";
-import type { InvestigateResult } from "@/server/riskripple";
-
-import { FindingsCards } from "./findings-cards";
 
 export type Prefill = { eventDescription: string; tickers: string };
 
@@ -27,7 +24,6 @@ export function InvestigateForm({
   const id = useId();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<InvestigateResult | null>(null);
 
   // Remount the form when a new prefill arrives (e.g. "Investigate Impact" from a
   // news article) so the uncontrolled defaultValue inputs below pick it up.
@@ -46,15 +42,16 @@ export function InvestigateForm({
               const form = new FormData(event.currentTarget);
               setPending(true);
               setError("");
-              setResult(null);
               try {
                 const outcome = await runInvestigation(form);
                 if (!outcome.ok) {
                   setError(outcome.error);
+                } else if (outcome.data.error) {
+                  setError(outcome.data.error);
                 } else {
-                  setResult(outcome.data);
-                  if (outcome.data.error) setError(outcome.data.error);
-                  else onComplete?.();
+                  // The result renders once, as the newest entry in "Previously
+                  // completed manual investigations" below -- not duplicated here.
+                  onComplete?.();
                 }
               } catch {
                 setError("Couldn’t reach the investigation agent. Try again.");
@@ -94,17 +91,6 @@ export function InvestigateForm({
           </form>
         </CardContent>
       </Card>
-
-      {result && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Findings</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {result.error ? <p className="text-destructive text-sm">{result.error}</p> : <FindingsCards result={result} />}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
