@@ -493,7 +493,10 @@ def _resolve_portfolios(portfolio_holdings: list[str] | None, user_id: str | Non
         raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
 
 
-_EMPTY_REGULATORY_SCAN_SHAPE = {"documents_scanned": 0, "portfolios_checked": 0, "alerts": []}
+_EMPTY_REGULATORY_SCAN_SHAPE = {
+    "documents_scanned": 0, "portfolios_checked": 0, "alerts": [],
+    "articles": [], "investigation_candidates": [], "confirmed_alerts": [],
+}
 _REGULATORY_SCAN_FRESHNESS_MINUTES = 10
 
 
@@ -519,7 +522,42 @@ def _perform_regulatory_scan(request: "AlertScanRequest", portfolios: dict[str, 
         d.setdefault("source", "regulatory")
 
     alerts = run_alert_scan(documents=documents, portfolios=portfolios)
-    return {"documents_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
+
+    # Tier 1: every real regulatory document scanned, regardless of confirmation --
+    # built directly from the fetched documents, same discipline as the news path's
+    # `articles` (visibility must never depend on the relevance/verification gate).
+    articles = [
+        {
+            "title": doc.get("title", ""),
+            "url": doc.get("document_url"),
+            "publication_date": doc.get("publication_date"),
+            "agencies": doc.get("agencies"),
+            "summary": _article_summary(doc),
+        }
+        for doc in documents
+    ]
+
+    investigation_candidates: list[dict] = []
+    confirmed_alerts: list[dict] = []
+    for alert in alerts:
+        for match in alert.get("matches", []):
+            entry = {
+                "title": alert.get("title"),
+                "document_url": alert.get("document_url"),
+                "publication_date": alert.get("publication_date"),
+                "source": "regulatory",
+                **match,
+            }
+            (confirmed_alerts if match.get("is_confirmed_alert") else investigation_candidates).append(entry)
+
+    return {
+        "documents_scanned": len(documents),
+        "portfolios_checked": len(portfolios),
+        "alerts": alerts,
+        "articles": articles,
+        "investigation_candidates": investigation_candidates,
+        "confirmed_alerts": confirmed_alerts,
+    }
 
 
 def _run_regulatory_scan_background(cache_key: str, request: "AlertScanRequest", portfolios: dict[str, list[str]]) -> None:

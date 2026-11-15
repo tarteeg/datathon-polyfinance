@@ -83,11 +83,25 @@ _GENERIC_PROCEDURAL_WORDS = {
     "guidance", "framework", "initiative", "action", "actions", "plan", "plans",
     "review", "update", "updates", "request", "requirements", "requirement",
     "information", "collection", "extension", "amendment", "amendments",
+    # Confirmed live: "Privacy Act of 1974; Matching Program" survived this filter
+    # (not every word was denylisted) and was promoted to a confirmed alert for both
+    # NVDA and AMD with zero real connection -- same class of bug as "Federal
+    # Register"/"Executive Order", a generic administrative-mechanism phrase, not a
+    # specific list/restriction with real consequences.
+    "privacy", "matching", "system", "systems", "record", "records", "data",
 }
 
 
 def _is_generic_procedural_phrase(candidate: str) -> bool:
-    tokens = [t.lower() for t in candidate.split() if t.lower() not in _CONNECTOR_WORDS]
+    # Confirmed live: "Privacy Act of 1974; Matching Program" survived this check
+    # despite every real word being denylisted, because bare .split() left trailing
+    # punctuation on "1974;" -- a token that's neither a connector nor in the
+    # denylist, so "all tokens denylisted" failed on a stray punctuation artifact,
+    # not a real word. Strip non-alphanumeric characters per token, and skip
+    # pure-digit tokens (a bare year/section number adds no specificity by itself)
+    # the same way connector words are skipped.
+    raw_tokens = [re.sub(r"[^\w]", "", t).lower() for t in candidate.split()]
+    tokens = [t for t in raw_tokens if t and t not in _CONNECTOR_WORDS and not t.isdigit()]
     return bool(tokens) and all(t in _GENERIC_PROCEDURAL_WORDS for t in tokens)
 # Maximally-common phrases with no differentiating signal: every U.S. regulatory
 # document and every U.S. company's 10-K says "United States" constantly, including in

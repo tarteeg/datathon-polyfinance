@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS riskripple_scan_cache (
 # the current response shape" and treat it as stale regardless of its age, without
 # needing to disable caching for genuinely current rows. Bump this whenever the
 # scan response shape or the logic that decides confirmed/candidate changes.
-CURRENT_SCAN_SCHEMA_VERSION = 1
+CURRENT_SCAN_SCHEMA_VERSION = 2  # bumped: regulatory scans now also produce articles/investigation_candidates/confirmed_alerts
 
 
 def ensure_scan_cache_table() -> None:
