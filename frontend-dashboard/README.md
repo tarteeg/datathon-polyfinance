@@ -1,4 +1,6 @@
-# Frontend dashboard
+# PolyFinances AlphaForge: RiskRipple (frontend dashboard)
+Multi-agent compliance watch: mobilizes public data, coordinates specialist agents to trace how regulatory events ripple through a portfolio, adapts to each persona, explains each figure with sources.
+
 
 I forked [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard), a Next.js admin dashboard built with shadcn/ui. The stock and portfolio features are what I added for the datathon.
 
