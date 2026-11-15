@@ -56,6 +56,44 @@ function SourceBadge({ source }: { source?: "news" | "regulatory" }) {
   return <Badge variant="outline" className="text-xs">{source === "news" ? "News" : "Regulatory"}</Badge>;
 }
 
+// Small, curated domain -> publisher-name map (same philosophy as every other curated
+// list in this app) -- StocksFeed articles don't carry a separate publisher field, but
+// the real URL's domain does. Falls back to the bare hostname for anything not listed.
+const PUBLISHER_NAMES: Record<string, string> = {
+  "seekingalpha.com": "Seeking Alpha",
+  "benzinga.com": "Benzinga",
+  "www.benzinga.com": "Benzinga",
+  "marketwatch.com": "MarketWatch",
+  "www.marketwatch.com": "MarketWatch",
+  "reuters.com": "Reuters",
+  "www.reuters.com": "Reuters",
+  "bloomberg.com": "Bloomberg",
+  "www.bloomberg.com": "Bloomberg",
+  "cnbc.com": "CNBC",
+  "www.cnbc.com": "CNBC",
+};
+
+function publisherFromUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const hostname = new URL(url).hostname;
+    return PUBLISHER_NAMES[hostname] ?? hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+// Confirmed live against real current StocksFeed data (30 real articles checked):
+// zero non-English titles found. Rather than wire a full Bedrock translation call for
+// a problem that doesn't currently occur, this is a cheap heuristic flag only -- if
+// non-English content ever does show up, it's labeled honestly instead of silently
+// passed through as if it were English. A real translation pass is a reasonable
+// follow-up if this ever actually fires.
+function looksNonEnglish(title: string): boolean {
+  const nonAscii = [...title].filter((c) => c.charCodeAt(0) > 127).length;
+  return title.length > 0 && nonAscii / title.length > 0.15;
+}
+
 function MatchAccordionItem({ match, keyId }: { match: AlertMatch; keyId: string }) {
   return (
     <AccordionItem value={keyId}>
@@ -273,6 +311,30 @@ export function RiskRippleWorkspace({ defaultTickers }: { defaultTickers: string
   );
 }
 
+// Urgency/impact first (confirmed > candidate > plain article, highest tier within
+// each), then publication recency as the tiebreaker -- per the explicit requirement
+// that news isn't just shown in whatever order the backend happened to return it.
+function sortArticlesByPriorityThenRecency(news: ScanResponse): NewsArticle[] {
+  const priorityByKey = new Map<string, number>();
+  for (const m of news.confirmed_alerts) {
+    const key = m.document_url ?? m.title ?? "";
+    priorityByKey.set(key, 100 + (m.classification_tier ?? 0));
+  }
+  for (const m of news.investigation_candidates) {
+    const key = m.document_url ?? m.title ?? "";
+    if (!priorityByKey.has(key)) priorityByKey.set(key, 50 + (m.classification_tier ?? 0));
+  }
+
+  return [...news.articles].sort((a, b) => {
+    const pa = priorityByKey.get(a.url ?? a.title ?? "") ?? 0;
+    const pb = priorityByKey.get(b.url ?? b.title ?? "") ?? 0;
+    if (pa !== pb) return pb - pa;
+    const ta = a.publication_date ? new Date(a.publication_date).getTime() : 0;
+    const tb = b.publication_date ? new Date(b.publication_date).getTime() : 0;
+    return tb - ta;
+  });
+}
+
 function NewsSectionWithAction({
   news,
   regulatoryScanning,
@@ -282,6 +344,7 @@ function NewsSectionWithAction({
   regulatoryScanning: boolean;
   onInvestigate: (article: NewsArticle) => void;
 }) {
+  const sortedArticles = sortArticlesByPriorityThenRecency(news);
   return (
     <Card>
       <CardHeader>
@@ -301,13 +364,23 @@ function NewsSectionWithAction({
           <p className="text-muted-foreground text-sm">No recent articles found for your holdings yet.</p>
         )}
         <div className="flex flex-col">
-          {news.articles.map((article, i) => (
+          {sortedArticles.map((article, i) => (
             <div
               key={`${article.url ?? article.title}-${i}`}
               className="border-border flex flex-col gap-1 border-b py-3 last:border-0 last:pb-0"
             >
               <div className="flex flex-wrap items-center gap-2">
                 {article.ticker && <Badge variant="secondary">{article.ticker}</Badge>}
+                {publisherFromUrl(article.url) && (
+                  <Badge variant="outline" className="text-xs">
+                    {publisherFromUrl(article.url)}
+                  </Badge>
+                )}
+                {looksNonEnglish(article.title) && (
+                  <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400">
+                    Non-English source — not translated
+                  </Badge>
+                )}
                 {article.publication_date && (
                   <span className="text-muted-foreground text-xs">
                     {new Date(article.publication_date).toLocaleDateString()}

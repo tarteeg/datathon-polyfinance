@@ -11,12 +11,50 @@ export type RiskRippleTraceMessage = {
   content: RiskRippleTraceBlock[];
 };
 
+export type ExposureClassification = { tier: string; reason: string };
+
+export type FollowupInvestigation = {
+  question: string;
+  tool_used: string;
+  classification: string;
+  summary: string;
+} | null;
+
+export type PortfolioImpact = {
+  weights_are_real?: boolean;
+  weights?: Record<string, number>;
+  weights_disclosure?: string;
+  price_errors?: Record<string, string>;
+  exposure_tiers?: Record<string, string>;
+  tier_shock_table?: Record<string, number>;
+  scenario_portfolio_pnl_pct?: number;
+  scenario_position_pnl?: Record<string, number>;
+  unshocked_holdings?: string[];
+  assumptions_label?: string;
+  annualized_volatility?: Record<string, number | null>;
+  error?: string;
+};
+
+export type PersonaComparison = {
+  persona: string;
+  display_name: string;
+  description: string;
+  constraint_violations: string[];
+  esg_notes: string[];
+  verdict: string;
+  challenges_the_request: boolean;
+};
+
 export type InvestigateResult = {
   event_description: string;
   portfolio_holdings: string[];
   answer: string | null;
   trace: RiskRippleTraceMessage[];
   error: string | null;
+  exposure_classifications?: Record<string, ExposureClassification>;
+  followup_investigation?: FollowupInvestigation;
+  portfolio_impact?: PortfolioImpact;
+  persona_comparison?: PersonaComparison[];
 };
 
 export async function investigate(eventDescription: string, tickers: string[]): Promise<InvestigateResult> {

@@ -1,53 +1,17 @@
 "use client";
 
-import { ArrowDownRight, Loader2, Search, Wrench } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useId, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CodeBlock, CodeBlockContent } from "@/components/ui/code-block";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Table, TableCell, TableHead } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Trace,
-  TraceCollapsible,
-  TraceCollapsibleContent,
-  TraceCollapsibleTrigger,
-  TraceIcon,
-  TraceLine,
-  TraceTitle,
-} from "@/components/ui/trace";
 import { runInvestigation } from "@/server/investigate-actions";
 import type { InvestigateResult } from "@/server/riskripple";
 
-// Matches the finance-chat reply's markdown pattern (dashboard/chat/_components/finance-reply.tsx)
-// for visual consistency -- the agent's answer is real markdown, not plain text.
-function AnswerMarkdown({ text }: { text: string }) {
-  return (
-    <Markdown
-      remarkPlugins={[remarkGfm]}
-      skipHtml
-      disallowedElements={["img"]}
-      components={{
-        table: ({ children }) => <Table>{children}</Table>,
-        td: ({ children }) => <TableCell className="whitespace-normal">{children}</TableCell>,
-        th: ({ children }) => (
-          <TableHead scope="col" className="whitespace-normal">
-            {children}
-          </TableHead>
-        ),
-      }}
-    >
-      {text}
-    </Markdown>
-  );
-}
+import { FindingsCards } from "./findings-cards";
 
 export type Prefill = { eventDescription: string; tickers: string };
 
@@ -134,80 +98,7 @@ export function InvestigateForm({
             <CardTitle>Findings</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {result.error ? (
-              <p className="text-destructive text-sm">{result.error}</p>
-            ) : (
-              <div className="text-sm [&>*+*]:mt-2">
-                <AnswerMarkdown text={result.answer ?? ""} />
-              </div>
-            )}
-
-            {!!result.trace.length && (
-              <Collapsible className="flex flex-col gap-2">
-                <CollapsibleTrigger className="text-muted-foreground flex items-center gap-2 text-xs hover:underline">
-                  <Wrench className="size-3.5" />
-                  Show how the agent got this ({result.trace.length} steps)
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                <Trace>
-                  {result.trace.flatMap((message, i) =>
-                    message.content.map((block, j) => {
-                      const key = `${i}-${j}`;
-                      if (block.type === "text") {
-                        if (message.role !== "assistant") return null;
-                        return (
-                          <p key={key} className="text-muted-foreground text-sm">
-                            {block.text}
-                          </p>
-                        );
-                      }
-                      if (block.type === "tool_use") {
-                        return (
-                          <TraceCollapsible key={key}>
-                            <TraceCollapsibleTrigger>
-                              <TraceLine>
-                                <TraceIcon>
-                                  <Wrench />
-                                </TraceIcon>
-                                <TraceTitle>{block.name ?? "tool call"}</TraceTitle>
-                              </TraceLine>
-                            </TraceCollapsibleTrigger>
-                            <TraceCollapsibleContent>
-                              <CodeBlock size="sm">
-                                <CodeBlockContent wrap>{JSON.stringify(block.input ?? {}, null, 2)}</CodeBlockContent>
-                              </CodeBlock>
-                            </TraceCollapsibleContent>
-                          </TraceCollapsible>
-                        );
-                      }
-                      if (block.type === "tool_result") {
-                        const content =
-                          typeof block.content === "string" ? block.content : JSON.stringify(block.content, null, 2);
-                        return (
-                          <TraceCollapsible key={key}>
-                            <TraceCollapsibleTrigger>
-                              <TraceLine status={block.status === "error" ? "error" : undefined}>
-                                <TraceIcon>
-                                  <ArrowDownRight />
-                                </TraceIcon>
-                                <TraceTitle>result{block.status ? ` (${block.status})` : ""}</TraceTitle>
-                              </TraceLine>
-                            </TraceCollapsibleTrigger>
-                            <TraceCollapsibleContent>
-                              <CodeBlock size="sm">
-                                <CodeBlockContent wrap>{content}</CodeBlockContent>
-                              </CodeBlock>
-                            </TraceCollapsibleContent>
-                          </TraceCollapsible>
-                        );
-                      }
-                      return null;
-                    }),
-                  )}
-                </Trace>
-                </CollapsibleContent>
-              </Collapsible>
-            )}
+            {result.error ? <p className="text-destructive text-sm">{result.error}</p> : <FindingsCards result={result} />}
           </CardContent>
         </Card>
       )}
