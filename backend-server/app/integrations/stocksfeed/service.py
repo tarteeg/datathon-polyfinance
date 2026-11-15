@@ -50,3 +50,10 @@ def fetch_most_mentioned(sector, hours, limit):
     if not isinstance(payload.get("stocks"), list) or not isinstance(payload.get("sectors"), list):
         raise StocksFeedError("Invalid StocksFeedAI ranking response")
     return payload
+
+
+def fetch_recent_events():
+    payload = _fetch("events")
+    if not all(isinstance(payload.get(key), list) for key in ("events", "companies")):
+        raise StocksFeedError("Invalid canonical event feed")
+    return payload

@@ -457,3 +457,19 @@ def delete_investigate_job(user_id: str, request_id: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def lock_event_scan(user_id: str, scan_type: str):
+    """Hold a session lock through the background run. Process exit releases it."""
+    conn = _connect()
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (user_id + ":" + scan_type,))
+            if cur.fetchone()[0]:
+                return conn
+    except Exception:
+        conn.close()
+        raise
+    conn.close()
+    return None
