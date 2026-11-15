@@ -25,6 +25,10 @@ npm run portfolio:migrate
 npm run chat:migrate
 ```
 
+On an existing database, rerun `npm run portfolio:migrate` to create the per-account headline analysis cache.
+
+On an existing database, rerun `npm run auth:migrate` to add the optional investor persona to user accounts.
+
 Start the dashboard with `npm run dev` and open [localhost:3000](http://localhost:3000).
 
 ## Finance chat setup
@@ -36,3 +40,9 @@ Select **Explain this chart** on a stock page to save its current chart in a new
 Ask Finance chat for recent news about a company, ticker, topic, or the broader market. News replies link to original publishers. Follow-ups can refer to stories by number after reopening the thread.
 
 Ask for a company’s latest quote or performance over a supported period, then ask follow-ups about the figures in the same thread. Stock replies cite Yahoo Finance and include the quote timestamp when available.
+
+## BreakPoint AI
+
+Sign in and use **BreakPoint AI** in the sidebar, or open [the decision lab](http://localhost:3000/dashboard/decision-lab). The fictional USD 10,000 portfolio starts at 60% SPY and 40% TLT. Move the TLT decline to 12.5% to reach the shared 5% loss limit, then to 13% to cross it. Change the allocation or dates to recalculate the historical chart. Expand the evidence below the chart for source dates, contributions and correlation.
+
+Robert and Amira compare the same scenario. Select Mateo to discuss stability and the missing ESG evidence. **Explain in Finance chat** opens a saved thread using the existing Bedrock configuration and tool timeline. The dashboard calculations run independently of Bedrock.

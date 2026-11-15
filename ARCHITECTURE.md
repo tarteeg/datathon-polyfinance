@@ -5,10 +5,11 @@ The template runs two apps. Next.js renders the dashboard and owns user accounts
 ```mermaid
 flowchart LR
     Browser -->|Pages, sign-in, portfolio edits| Next["Next.js dashboard"]
-    Next -->|Accounts, sessions, holdings, chat history| DB[("Amazon Aurora PostgreSQL")]
+    Next -->|Accounts, sessions, holdings, chat history and headline analysis| DB[("Amazon Aurora PostgreSQL")]
     API -->|Converse / ConverseStream| Bedrock["Amazon Bedrock"]
     Next -->|HTTP| API["FastAPI"]
     API -->|Quotes and history via yfinance| Yahoo["Yahoo Finance"]
+    Browser -->|Article thumbnails| Publisher["Publisher image hosts"]
     API -->|Articles and sector rankings| Feed["StocksFeed API"]
     API -->|Daily exchange rates| BoC["Bank of Canada Valet API"]
     API -->|Reply figures and tool results| Check["Figure check"]
@@ -16,6 +17,8 @@ flowchart LR
 ```
 
 ## Sign-in and portfolios
+
+Settings lets a signed-in user choose Amira, Mateo, or Robert as their fictional investor persona. Better Auth validates the selection and stores its ID in the nullable `user.investor_persona` column in Aurora. Both settings entry points load the saved choice from the session.
 
 Visiting `/` opens `/dashboard/home`. The [Next.js proxy](frontend-dashboard/src/proxy.ts) checks the Better Auth session for dashboard requests and sends signed-out users to the login page. Account settings, including name and password changes, use the same Better Auth service inside Next.js.
 
@@ -37,6 +40,8 @@ After the reply text has streamed, FastAPI checks every figure in it against the
 
 Direct stock questions use a read-only `get_stock` tool on FastAPI. It reuses the Yahoo Finance history service and calculates price change and observed highs and lows from the selected period. For performance questions, Aurora also saves the fetched closing-price points in the stock snapshot. OpenUI renders the shared stock-page chart below the takeaway using those points. Month to date uses the exchange-local calendar month and prior month close; a trailing month uses the first returned candle close. Quote-only lookups omit the chart. Aurora stores the stock summary alongside the answer. Follow-ups receive the most recent stock snapshot from the signed-in user’s thread. Requests for an updated price or a different period trigger a new lookup.
 
+Bedrock includes up to three contextual follow-up questions in each new FinanceAnswer. The dashboard shows them as buttons after the latest reply finishes. Clicking one submits a normal message in the same thread. The original answer stores the suggestions, so they survive a reload without a second model call. Older replies without suggestions render as before.
+
 ## Prices, news, and Discover
 
 | What the user opens | FastAPI request | Where the result comes from |
@@ -48,10 +53,28 @@ Direct stock questions use a read-only `get_stock` tool on FastAPI. It reuses th
 
 The [stock history fetcher](frontend-dashboard/src/server/stock-history.ts) converts share-class symbols such as `BRK.B` to Yahoo's `BRK-B` and requests the quote with `cache: "no-store"`. The chart reads `history.candles` and uses Unix seconds for time. The latest price comes from `history.ticker.regularMarketPrice`. A missing ticker or period with no market data can return 404. Yahoo rate limiting returns 503.
 
-Discover fetches the ranking with a 60-second revalidation interval. It uses the quote endpoint separately to display each company's price and daily change. StocksFeed owns article collection and analysis. To build a datathon-specific news source, start with the [StocksFeed integration](backend-server/app/integrations/stocksfeed/service.py). It is the point where the template makes outbound HTTP requests and checks the returned data. The news routes report upstream failures as HTTP 502.
+Discover fetches the ranking with a 60-second revalidation interval. It uses the quote endpoint separately to display each company's price and daily change. StocksFeed owns article collection and analysis. It stores the publisher’s preview image URL when available. Home and stock pages load that image directly from the publisher and keep a text-only layout when it is missing or fails to load. To build a datathon-specific news source, start with the [StocksFeed integration](backend-server/app/integrations/stocksfeed/service.py). It is the point where the template makes outbound HTTP requests and checks the returned data. The news routes report upstream failures as HTTP 502.
+
+## Headline impact and followed questions
+
+Home and stock news cards open **Why does this matter to my portfolio?** On every click, Next.js reads the signed-in account’s current holdings and fetches the current StocksFeed article by exact URL through FastAPI (`GET /article?url=…`). The authenticated `POST /headlines/impact` sends Bedrock the available body, its publisher coverage label (full text, excerpt, unknown, or missing), headline, source, publication date, authors, feed summary, tickers and entities, and the account’s symbols, company names and quantities. A missing quantity identifies a watchlist entry. The model can connect an untagged holding through the text. FastAPI numbers the source passages, validates each returned ticker and passage ID, and displays the selected text directly from the source. Two dated issuer relationships (Apple–Broadcom and TSMC–NVIDIA) can support indirect connections when relevant.
+
+Aurora stores the validated answer in `headline_impact_cache`, scoped to the user and article. Next.js hashes the model inputs and an analysis version, and reuses a matching result, including a finding of no supported connection. A changed article input, position, share count or watchlist entry triggers analysis on the next click. A transaction lock prevents concurrent clicks for the same user and article from generating duplicate answers. Failed analyses are retried on the next click. Following a question uses the same cache and saves a separate point-in-time chat snapshot. The historical replay uses the same cache with its selected date and simulated holdings.
+
+**Home → News** also contains a historical Canadian rail replay. It uses a fictional CA$50,000 portfolio and dated Chemtrade disclosures, independent of account holdings and live market data. Removing the simulated Chemtrade position removes the match. Moving the replay to November reveals the subsequent quarterly results. **Follow this question** saves the headline, evidence and question in an account-scoped Finance chat thread. Repeating the action reopens the same thread. Follow-up is manual; the replay supplies the later disclosure and live articles have no automatic monitoring.
 
 ## Running the pieces together
 
 Start FastAPI on port 8000 and Next.js on port 3000 in separate terminals. The dashboard reads `BACKEND_API_URL` from its server environment. FastAPI reads `STOCKSFEED_BASE_URL` from its own environment. Aurora connection settings and the Better Auth secret belong in the dashboard's server environment.
 
 For a fresh database, run the authentication migration before the portfolio migration because holdings reference the Better Auth user table. See the [dashboard setup](frontend-dashboard/README.md#run-locally) for the commands and the [backend README](backend-server/README.md) for Python setup, supported chart periods, and example requests.
+
+## BreakPoint AI
+
+The dashboard's **BreakPoint AI** sidebar item opens `/dashboard/decision-lab`. The signed-in page posts fictional settings through Next.js to FastAPI's `POST /decision-lab/analyze`. The Python service supplies the chart, historical metrics and reverse stress results. It uses the existing cached yfinance adjusted-history adapter. Only SPY (US stocks) and TLT (long-term US Treasury bonds), both quoted in USD, are supported.
+
+The replay starts at the close preceding the requested range. Both ETFs must have a finite positive adjusted close in USD for every expected US equity session (XNYS calendar). Each day's portfolio return is the weighted sum of that day's adjusted asset returns. The portfolio compounds that return and resets to target weights daily. Each fund's contribution is the sum of its weighted daily returns scaled by the previous portfolio value relative to the initial value. Contributions add to the cumulative return. Annualized volatility is the sample standard deviation of daily returns times √252. Maximum drawdown is the greatest loss from a previous closing peak, including the baseline. Pearson correlation uses the aligned daily returns and is unavailable for constant returns. Prices include distributions and split adjustments. Taxes, transaction costs, slippage and FX are excluded. Yahoo may revise historical adjustments.
+
+The slider applies one instantaneous decline to the selected ETF while the other stays flat. Portfolio impact equals target weight times asset shock. Dividing the loss limit by the asset weight gives the decline that reaches the limit. A zero weight or an insufficient allocation can make it unreachable. With weight equal to the limit, a total loss reaches it exactly and a strict breach is impossible. These conditional scenarios carry no probability or forecast. The shared editable limit is a demo assumption independent of the official persona descriptions.
+
+**Explain in Finance chat** sends the same settings and selected persona to the existing authenticated chat stream. Bedrock requests the read-only `analyze_breakpoint` tool, which runs the same Python calculation and returns a summary with dates and sources. Aurora saves the answer and actual tool input and output in the thread's existing activity column. Missing replay data is visible in both the page and tool result.

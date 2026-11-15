@@ -1,10 +1,12 @@
 import { cookies } from "next/headers";
 import { Suspense } from "react";
 
+import { railHeadline } from "@/data/rail-headline";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getHoldings } from "@/server/portfolio";
 
 import { AddStockDialog } from "../_components/sidebar/add-stock-dialog";
+import { HeadlineImpact } from "../stock/[ticker]/_components/headline-impact";
 import { StockNews } from "../stock/[ticker]/_components/stock-news";
 import { StockNewsLayout } from "../stock/[ticker]/_components/stock-news-layout";
 import { NewsFilters } from "./_components/news-filters";
@@ -25,6 +27,11 @@ async function HomeNews({ scope, symbol, hours }: Filters) {
   const initialCards = (await cookies()).get("stock_news_view")?.value === "cards";
   return (
     <div className="flex flex-col gap-4">
+      <section id="rail-replay" className="grid justify-items-start gap-2 rounded-xl border bg-card p-4">
+        <p className="text-xs text-muted-foreground">Historical replay · August 22, 2024</p>
+        <h2 className="text-lg font-medium">{railHeadline.title}</h2>
+        <HeadlineImpact demo headline={railHeadline} />
+      </section>
       <NewsFilters key={JSON.stringify([all, ticker])} all={all} ticker={ticker} saved={saved} />
       <StockNewsLayout
         heading={

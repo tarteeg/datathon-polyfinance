@@ -25,6 +25,14 @@ def get_articles(
         raise HTTPException(502, str(exc)) from exc
 
 
+@router.get("/article")
+def article_by_url(url: str):
+    try:
+        return service.fetch_article_by_url(url)
+    except service.StocksFeedError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @router.get("/article/{article_slug}")
 def get_article(article_slug: str):
     try:

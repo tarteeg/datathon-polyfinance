@@ -10,7 +10,16 @@ async function migrate() {
         PRIMARY KEY (user_id, ticker)
       )
     `);
-    console.log("Portfolio table is ready.");
+    await authPool.query(`
+      CREATE TABLE IF NOT EXISTS headline_impact_cache (
+        user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+        article_key UUID NOT NULL,
+        input_hash TEXT NOT NULL,
+        analysis JSONB NOT NULL,
+        PRIMARY KEY (user_id, article_key)
+      )
+    `);
+    console.log("Portfolio and headline analysis tables are ready.");
   } finally {
     await authPool.end();
   }

@@ -144,7 +144,13 @@ export function parseFinanceReply(answer: string) {
     const program = /^root\s*=\s*FinanceAnswer\(((?:"(?:\\.|[^"\\])*"|[^")])*)\)/.exec(code);
     if (program) {
       try {
-        const args = answerArgs.parse(JSON.parse(`[${program[1]}]`));
+        const values: unknown[] = JSON.parse(`[${program[1]}]`);
+        const args = answerArgs.parse(values.slice(0, 4));
+        const suggestions: unknown = values[4];
+        const followUps = Array.isArray(suggestions)
+          ? [...new Set(suggestions.filter((q): q is string => typeof q === "string")
+              .map((q) => q.trim()).filter((q) => q.length > 0 && q.length <= 180))].slice(0, 3)
+          : [];
         const [title, explanation, headers, rows] = args;
         const footer = code
           .slice(program[0].length)
@@ -152,6 +158,7 @@ export function parseFinanceReply(answer: string) {
           .replace(/^`{3}(?:\s|$)/, "")
           .trim();
         return {
+          followUps,
           prose: intro,
           footer,
           ui: `root = FinanceAnswer(${args.map((value) => JSON.stringify(value)).join(", ")})`,

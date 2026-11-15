@@ -3,6 +3,7 @@ import { Check, ChevronDown, CircleAlert, LoaderCircle, ShieldCheck, Wrench } fr
 import type { ChatActivity, FigureCheck } from "@/lib/chat-stream";
 
 const labels: Record<string, string> = {
+  analyze_breakpoint: "Replay portfolio and test the loss limit",
   get_stock: "Look up stock prices",
   compare_stocks: "Compare stocks",
   discover_companies: "Find companies",
@@ -128,7 +129,8 @@ export function ActivityTimeline({ steps, streaming }: { steps?: ChatActivity[];
                 ) : (
                   <>
                     <code>{step.tool}</code>
-                    <pre className="text-xs">{JSON.stringify(step.input, null, 2)}</pre>
+                    <pre className="overflow-x-auto text-xs">{JSON.stringify(step.input, null, 2)}</pre>
+                    {step.result && <pre className="overflow-x-auto text-xs">{JSON.stringify(step.result, null, 2)}</pre>}
                   </>
                 )}
               </details>
