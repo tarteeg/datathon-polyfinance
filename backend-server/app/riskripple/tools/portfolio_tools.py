@@ -36,7 +36,15 @@ def record_exposure_classification(symbol: str, tier: str, reason: str) -> dict:
 
 
 @tool
-def record_followup_finding(question: str, tool_used: str, classification: str, summary: str) -> dict:
+def record_followup_finding(
+    question: str,
+    tool_used: str,
+    classification: str,
+    summary: str,
+    discovered_entity: str | None = None,
+    discovered_ticker: str | None = None,
+    discovery_relevance: str | None = None,
+) -> dict:
     """Record the result of your ONE bounded autonomous follow-up question. After
     completing the main investigation, generate exactly one additional question about
     a downstream relationship or exposure channel you have NOT already covered
@@ -49,10 +57,33 @@ def record_followup_finding(question: str, tool_used: str, classification: str, 
     you actually found, in 1-3 sentences, grounded in that tool's real result -- never
     invent a finding to make the follow-up look more conclusive than it was). Call
     this at most once per investigation.
+
+    If that one follow-up question happens to surface a real company, person, or other
+    entity that is NOT already in the portfolio you were given and was NOT named by
+    the user's event description -- found via a real tool result, e.g. a supplier,
+    competitor, or affected producer/importer turned up by search_sec_edgar_live or
+    propose_candidate_entities -- name it explicitly via `discovered_entity` (its name)
+    and, if known, `discovered_ticker` (its ticker; leave as None if you don't have a
+    reliable ticker for it, e.g. a private company, a country, or a person), plus
+    `discovery_relevance` (1-2 sentences on why it matters here, grounded in the same
+    real tool result, never invented). The portfolio is the destination of this
+    investigation, not the boundary of what you're allowed to notice -- but only fill
+    these fields when your one follow-up question actually surfaced something real;
+    leave all three as None if it didn't, rather than forcing a discovery that isn't
+    there.
     """
     if classification not in FOLLOWUP_CLASSIFICATIONS:
         return {"recorded": False, "error": f"classification must be one of {FOLLOWUP_CLASSIFICATIONS}, got {classification!r}"}
-    return {"recorded": True, "question": question, "tool_used": tool_used, "classification": classification, "summary": summary}
+    return {
+        "recorded": True,
+        "question": question,
+        "tool_used": tool_used,
+        "classification": classification,
+        "summary": summary,
+        "discovered_entity": discovered_entity,
+        "discovered_ticker": discovered_ticker,
+        "discovery_relevance": discovery_relevance,
+    }
 
 
 ALL_PORTFOLIO_TOOLS = [record_exposure_classification, record_followup_finding]

@@ -158,7 +158,16 @@ supplier-of-a-supplier, a competitor, a major customer, a macro transmission cha
 never a fixed/generic question), use exactly one more tool call to investigate it, and
 call record_followup_finding exactly once with the result. This is a single bounded
 step, not an open-ended research loop -- do not chain further follow-up questions from
-its result."""
+its result.
+
+The portfolio you were given is the DESTINATION of this investigation, not the
+boundary of what you're allowed to discover. If that one follow-up question's tool
+call happens to surface a real company, person, or other entity that isn't already in
+the portfolio and wasn't named in the event description -- a real supplier, a real
+competitor, a real affected producer or importer -- name it explicitly via
+record_followup_finding's discovered_entity/discovered_ticker/discovery_relevance
+fields, grounded in that same real tool result. Only fill those fields when something
+real actually turned up; leave them empty otherwise rather than forcing a discovery."""
 
 
 def build_ripple_investigator_agent() -> Agent:

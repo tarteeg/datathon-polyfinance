@@ -18,7 +18,13 @@ from pydantic import BaseModel
 from app.riskripple.alerts import db as alerts_db
 from app.riskripple.alerts.db import get_all_portfolios
 from app.riskripple.alerts.pipeline import run_alert_scan
-from app.riskripple.finance.live_portfolio import compute_annualized_volatility, compute_real_weights
+from app.riskripple.finance.live_portfolio import (
+    compute_annualized_volatility,
+    compute_real_weights,
+    fetch_daily_price_history,
+)
+from app.riskripple.finance.returns import align_price_panel, daily_returns, returns_panel
+from app.riskripple.finance.risk import correlation_matrix, max_drawdown
 from app.riskripple.finance.stress import TIER_SHOCKS, build_tier_shock_scenario, run_stress_test
 from app.riskripple.ingestion import macro_fred, news_stocksfeed, regulatory_events, sanctions_gac, sanctions_ofac
 from app.riskripple.personas.assessment import compare_personas
@@ -176,6 +182,54 @@ def _extract_structured_findings(messages: list[dict]) -> tuple[dict[str, dict],
     return exposure, followup, industries
 
 
+def _build_correlation_and_drawdown(portfolio_holdings: list[str]) -> tuple[dict | str, dict[str, dict | str]]:
+    """Real, deterministic correlation matrix and per-holding max-drawdown, computed
+    from the same real daily price history already fetched for volatility -- not a
+    second, duplicate fetch path, and never an LLM-generated number. Degrades
+    explicitly (a string message, not a silent omission or a whole-response failure)
+    when there isn't enough real data to compute one of these: a single holding has no
+    pairwise correlation to show, and a symbol with too little price history can't
+    support a drawdown estimate.
+    """
+    prices: dict[str, object] = {}
+    for symbol in portfolio_holdings:
+        series = fetch_daily_price_history(symbol)
+        if series is not None and len(series) >= 20:
+            prices[symbol] = series
+
+    drawdowns: dict[str, dict | str] = {}
+    for symbol in portfolio_holdings:
+        series = prices.get(symbol)
+        if series is None:
+            drawdowns[symbol] = "Not enough real price history to compute a drawdown estimate."
+            continue
+        try:
+            result = max_drawdown(daily_returns(series))
+            drawdowns[symbol] = {
+                "max_drawdown_pct": result.max_drawdown,
+                "peak_date": result.peak_date.date().isoformat(),
+                "trough_date": result.trough_date.date().isoformat(),
+                "recovery_date": result.recovery_date.date().isoformat() if result.recovery_date is not None else None,
+            }
+        except Exception as exc:  # noqa: BLE001 -- drawdown is supporting context, never fatal
+            drawdowns[symbol] = f"Could not compute: {type(exc).__name__}: {exc}"
+
+    if len(prices) < 2:
+        correlation: dict | str = (
+            "Correlation requires at least 2 holdings with sufficient real price history; "
+            f"only {len(prices)} of {len(portfolio_holdings)} qualified."
+        )
+    else:
+        try:
+            panel = align_price_panel(prices)
+            corr_df = correlation_matrix(returns_panel(panel))
+            correlation = {row: corr_df.loc[row].to_dict() for row in corr_df.index}
+        except Exception as exc:  # noqa: BLE001 -- correlation is supporting context, never fatal
+            correlation = f"Could not compute: {type(exc).__name__}: {exc}"
+
+    return correlation, drawdowns
+
+
 def _build_portfolio_and_persona_sections(
     portfolio_holdings: list[str],
     portfolio_quantities: dict[str, float] | None,
@@ -216,6 +270,8 @@ def _build_portfolio_and_persona_sections(
         except Exception:  # noqa: BLE001 -- volatility is supporting context, never fatal
             volatilities[symbol] = None
 
+    correlation, drawdowns = _build_correlation_and_drawdown(portfolio_holdings)
+
     portfolio_impact = {
         "weights_are_real": weights_are_real,
         "weights": weights,
@@ -233,6 +289,8 @@ def _build_portfolio_and_persona_sections(
         "unshocked_holdings": stress_result.unshocked_assets,
         "assumptions_label": stress_result.assumptions_label,
         "annualized_volatility": volatilities,
+        "correlation_matrix": correlation,
+        "max_drawdown": drawdowns,
     }
 
     persona_assessments = compare_personas(
