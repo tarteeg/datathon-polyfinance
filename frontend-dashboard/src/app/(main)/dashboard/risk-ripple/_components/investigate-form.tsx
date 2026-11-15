@@ -49,14 +49,24 @@ function AnswerMarkdown({ text }: { text: string }) {
   );
 }
 
-export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) {
+export type Prefill = { eventDescription: string; tickers: string };
+
+export function InvestigateForm({
+  defaultTickers,
+  prefill,
+}: {
+  defaultTickers: string;
+  prefill?: Prefill | null;
+}) {
   const id = useId();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<InvestigateResult | null>(null);
 
+  // Remount the form when a new prefill arrives (e.g. "Investigate Impact" from a
+  // news article) so the uncontrolled defaultValue inputs below pick it up.
   return (
-    <div className="flex flex-col gap-4">
+    <div key={prefill ? `${prefill.eventDescription}-${prefill.tickers}` : "default"} className="flex flex-col gap-4">
       <Card>
         <CardHeader>
           <CardTitle>Describe the event</CardTitle>
@@ -93,6 +103,7 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
                   id={`${id}-event`}
                   name="event_description"
                   rows={3}
+                  defaultValue={prefill?.eventDescription}
                   placeholder="e.g. New export controls restrict advanced semiconductor equipment sales to a major chip-manufacturing hub."
                   required
                 />
@@ -102,7 +113,7 @@ export function InvestigateForm({ defaultTickers }: { defaultTickers: string }) 
                 <Input
                   id={`${id}-tickers`}
                   name="tickers"
-                  defaultValue={defaultTickers}
+                  defaultValue={prefill?.tickers || defaultTickers}
                   placeholder="NVDA, AMD, INTC"
                   required
                 />

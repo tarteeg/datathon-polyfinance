@@ -1,11 +1,8 @@
-import { ChevronDown } from "lucide-react";
 import type { Metadata } from "next";
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getHoldings } from "@/server/portfolio";
 
-import { AlertsPanel } from "./_components/alerts-panel";
-import { InvestigateForm } from "./_components/investigate-form";
+import { RiskRippleWorkspace } from "./_components/risk-ripple-workspace";
 
 export const metadata: Metadata = {
   title: "Risk Ripple — Trickle-Down Investigation",
@@ -30,17 +27,7 @@ export default async function Page() {
         </p>
       </div>
 
-      <AlertsPanel />
-
-      <Collapsible>
-        <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-sm hover:underline">
-          <ChevronDown className="size-4" />
-          Ask about a specific event instead
-        </CollapsibleTrigger>
-        <CollapsibleContent className="mt-2">
-          <InvestigateForm defaultTickers={defaultTickers} />
-        </CollapsibleContent>
-      </Collapsible>
+      <RiskRippleWorkspace defaultTickers={defaultTickers} />
     </div>
   );
 }

@@ -39,10 +39,16 @@ export type AlertMatch = {
   matched_entity: string;
   evidence_snippet: string;
   classification: string;
+  classification_tier?: number | null;
+  exposure_mechanism?: string | null;
   verification_reasoning?: string | null;
   is_confirmed_alert: boolean;
   recommendation: string | null;
   recommendation_error: string | null;
+  source?: "news" | "regulatory";
+  title?: string | null;
+  document_url?: string | null;
+  publication_date?: string | null;
 };
 
 export type AlertEntry = {
@@ -54,32 +60,99 @@ export type AlertEntry = {
   matches: AlertMatch[];
 };
 
-export type AlertScanResponse = {
-  alerts: AlertEntry[];
+export type NewsArticle = {
+  title: string;
+  url: string | null;
+  publication_date: string | null;
+  ticker: string | null;
+  summary: string;
 };
 
-async function postAlertScan(path: string, tickers: string[], userId: string): Promise<AlertEntry[]> {
+export type ScanStatus = "idle" | "scanning" | "error";
+
+export type ScanDiagnostics = {
+  per_ticker: Record<string, { raw_count: number; error: string | null }>;
+  error: string | null;
+};
+
+/** Shape shared by both /alerts/scan and /alerts/scan-news's poll + trigger responses.
+ * The regulatory path doesn't populate `articles` (only news has per-article tier-1
+ * visibility) -- this app derives its "News & Geopolitical Intelligence" section from
+ * the news scan's `articles` specifically, and merges both sources' `alerts` into the
+ * candidate/confirmed tiers. */
+export type ScanResponse = {
+  alerts: AlertEntry[];
+  articles: NewsArticle[];
+  investigation_candidates: AlertMatch[];
+  confirmed_alerts: AlertMatch[];
+  diagnostics?: ScanDiagnostics;
+  status: ScanStatus;
+  last_success_at: string | null;
+  error_message: string | null;
+};
+
+async function postScan(path: string, tickers: string[], userId: string, limitPerTicker?: number): Promise<ScanResponse> {
   const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
+  const body: Record<string, unknown> = { portfolio_holdings: tickers, user_id: userId };
+  if (limitPerTicker) body.limit_per_ticker = limitPerTicker;
   const response = await fetch(new URL(path, backend), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ portfolio_holdings: tickers, user_id: userId }),
+    body: JSON.stringify(body),
     cache: "no-store",
-    // A scan can run the recommendation/verification step across several real
-    // matches; give it real room, same as the manual investigate call.
-    signal: AbortSignal.timeout(150000),
+    // This returns almost immediately now (cache + background refresh) -- generous
+    // timeout only as a safety net, not because it's expected to be slow.
+    signal: AbortSignal.timeout(20000),
   });
-  if (!response.ok) throw new Error(`Alert scan request failed (${response.status})`);
-  const data = (await response.json()) as AlertScanResponse;
-  return data.alerts;
+  if (!response.ok) throw new Error(`Scan request failed (${response.status})`);
+  const data = (await response.json()) as Partial<ScanResponse>;
+  return {
+    alerts: data.alerts ?? [],
+    articles: data.articles ?? [],
+    investigation_candidates: data.investigation_candidates ?? [],
+    confirmed_alerts: data.confirmed_alerts ?? [],
+    diagnostics: data.diagnostics,
+    status: data.status ?? "idle",
+    last_success_at: data.last_success_at ?? null,
+    error_message: data.error_message ?? null,
+  };
 }
 
-/** Real Federal Register / regulatory documents checked against this user's real holdings. */
-export async function scanRegulatoryAlerts(tickers: string[], userId: string): Promise<AlertEntry[]> {
-  return postAlertScan("/riskripple/alerts/scan", tickers, userId);
+async function getScanStatus(path: string, userId: string): Promise<ScanResponse> {
+  const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
+  const url = new URL(path, backend);
+  url.searchParams.set("user_id", userId);
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`Scan status request failed (${response.status})`);
+  const data = (await response.json()) as Partial<ScanResponse>;
+  return {
+    alerts: data.alerts ?? [],
+    articles: data.articles ?? [],
+    investigation_candidates: data.investigation_candidates ?? [],
+    confirmed_alerts: data.confirmed_alerts ?? [],
+    diagnostics: data.diagnostics,
+    status: data.status ?? "idle",
+    last_success_at: data.last_success_at ?? null,
+    error_message: data.error_message ?? null,
+  };
 }
 
-/** Real StocksFeed news, per held ticker, checked against this user's real holdings. */
-export async function scanNewsAlerts(tickers: string[], userId: string): Promise<AlertEntry[]> {
-  return postAlertScan("/riskripple/alerts/scan-news", tickers, userId);
+/** Kicks off (or returns the cached state of) a regulatory scan. Returns almost
+ * immediately -- `status: "scanning"` means a background refresh just started. */
+export async function triggerRegulatoryScan(tickers: string[], userId: string): Promise<ScanResponse> {
+  return postScan("/riskripple/alerts/scan", tickers, userId);
+}
+
+/** Kicks off (or returns the cached state of) a news scan. Returns almost
+ * immediately -- `status: "scanning"` means a background refresh just started. */
+export async function triggerNewsScan(tickers: string[], userId: string): Promise<ScanResponse> {
+  return postScan("/riskripple/alerts/scan-news", tickers, userId, 10);
+}
+
+export async function pollRegulatoryScan(userId: string): Promise<ScanResponse> {
+  return getScanStatus("/riskripple/alerts/scan/status", userId);
+}
+
+export async function pollNewsScan(userId: string): Promise<ScanResponse> {
+  return getScanStatus("/riskripple/alerts/scan-news/status", userId);
 }
