@@ -264,6 +264,22 @@ def run_alert_scan(
                     # exact false-positive failure mode Stage 2 exists to catch.
                     # Dropped before spending a recommendation-generation call.
                     continue
+                # A direct news mention's materiality (classification in
+                # _ALERT_WORTHY_CLASSIFICATIONS) is NOT by itself sufficient to
+                # confirm a portfolio-exposure alert -- confirmed live: 3 real
+                # Jensen-Huang/NVIDIA leadership-crisis stories were reaching
+                # confirmed_alerts on materiality alone. For this specific path
+                # (news + direct), require the stricter classification_tier==5
+                # ("evidence_supported_portfolio_exposure" -- a concrete, quantified
+                # transmission signal, not just a significant event) from
+                # verification._classify_direct_news. Every other path (regulatory
+                # documents, supply-chain/material matches) is unaffected -- those
+                # don't carry a classification_tier field and keep their existing,
+                # unweakened behavior exactly as before.
+                if m.relationship == "direct" and doc.get("source") == "news":
+                    is_confirmed = verdict.get("classification_tier") == 5
+                else:
+                    is_confirmed = classification in _ALERT_WORTHY_CLASSIFICATIONS
                 try:
                     rec_text = _generate_recommendation(
                         client,
@@ -285,8 +301,10 @@ def run_alert_scan(
                         "matched_entity": m.matched_entity,
                         "evidence_snippet": m.evidence_snippet,
                         "classification": classification,
+                        "classification_tier": verdict.get("classification_tier"),
+                        "exposure_mechanism": verdict.get("mechanism"),
                         "verification_reasoning": verdict.get("reasoning"),
-                        "is_confirmed_alert": classification in _ALERT_WORTHY_CLASSIFICATIONS,
+                        "is_confirmed_alert": is_confirmed,
                         "recommendation": rec_text,
                         "recommendation_error": rec_error,
                     }

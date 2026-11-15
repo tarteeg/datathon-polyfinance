@@ -12,9 +12,10 @@ import json
 import re
 from dataclasses import asdict, is_dataclass
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel
 
+from app.riskripple.alerts import db as alerts_db
 from app.riskripple.alerts.db import get_all_portfolios
 from app.riskripple.alerts.pipeline import run_alert_scan
 from app.riskripple.finance.live_portfolio import compute_annualized_volatility, compute_real_weights
@@ -415,8 +416,57 @@ def _resolve_portfolios(portfolio_holdings: list[str] | None, user_id: str | Non
         raise HTTPException(502, f"Could not read portfolios from the database: {exc}") from exc
 
 
+_EMPTY_REGULATORY_SCAN_SHAPE = {"documents_scanned": 0, "portfolios_checked": 0, "alerts": []}
+_REGULATORY_SCAN_FRESHNESS_MINUTES = 10
+
+
+def _perform_regulatory_scan(request: "AlertScanRequest", portfolios: dict[str, list[str]]) -> dict:
+    if request.documents:
+        documents = [d.model_dump() for d in request.documents]
+    else:
+        if request.search_term:
+            result = regulatory_events.search_documents(term=request.search_term, per_page=request.per_page)
+        else:
+            # Broad, topic-agnostic pull (any agency, no keyword filter) rather
+            # than the old 5-fixed-phrase semiconductor/export net -- see
+            # search_documents_broad's docstring. The old narrow multi-term
+            # search is still available via an explicit `search_term`. The
+            # request's `per_page` default (10) is tuned for a single-term
+            # search; a broad, unfiltered pull needs more volume to carry real
+            # topic diversity, so use at least 40 here unless the caller asked
+            # for more.
+            result = regulatory_events.search_documents_broad(per_page=max(request.per_page, 40))
+        documents = _dataclass_list(result.documents)
+
+    for d in documents:
+        d.setdefault("source", "regulatory")
+
+    alerts = run_alert_scan(documents=documents, portfolios=portfolios)
+    return {"documents_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
+
+
+def _run_regulatory_scan_background(cache_key: str, request: "AlertScanRequest", portfolios: dict[str, list[str]]) -> None:
+    try:
+        result = _perform_regulatory_scan(request, portfolios)
+    except Exception as exc:
+        alerts_db.save_scan_error(cache_key, "regulatory", f"{type(exc).__name__}: {exc}")
+        return
+    alerts_db.save_scan_success(cache_key, "regulatory", result)
+
+
+def _cached_regulatory_response(cache_key: str, status_if_missing: str = "idle") -> dict:
+    cached = alerts_db.get_cached_scan(cache_key, "regulatory")
+    base = (cached.get("result") if cached else None) or _EMPTY_REGULATORY_SCAN_SHAPE
+    return {
+        **base,
+        "status": cached["status"] if cached else status_if_missing,
+        "last_success_at": cached["last_success_at"] if cached else None,
+        "error_message": (cached.get("error_message") if cached and cached["status"] == "error" else None),
+    }
+
+
 @router.post("/alerts/scan")
-def alerts_scan(request: AlertScanRequest):
+def alerts_scan(request: AlertScanRequest, background_tasks: BackgroundTasks):
     """Scan regulatory/sanctions documents against a real portfolio and return
     genuinely relevant alerts with a constrained recommendation for each. Pass
     `portfolio_holdings` (and ideally `user_id`) to scope the scan to one caller's
@@ -425,36 +475,46 @@ def alerts_scan(request: AlertScanRequest):
     case). If `documents` isn't given, fetches live Federal Register documents (via
     `search_term`, or the existing broad default net) instead of requiring a caller
     to supply them.
+
+    Same cache + background-refresh pattern as `/alerts/scan-news` (this path is
+    faster in practice -- ~6-20s observed -- but the same immediate-response,
+    background-refresh behavior keeps the frontend's handling consistent across both
+    endpoints). `documents` supplied explicitly bypasses the cache entirely (used by
+    tests/tools that want a synchronous result against a specific document set).
     """
-    if request.documents:
-        documents = [d.model_dump() for d in request.documents]
-    else:
-        try:
-            if request.search_term:
-                result = regulatory_events.search_documents(term=request.search_term, per_page=request.per_page)
-            else:
-                # Broad, topic-agnostic pull (any agency, no keyword filter) rather
-                # than the old 5-fixed-phrase semiconductor/export net -- see
-                # search_documents_broad's docstring. The old narrow multi-term
-                # search is still available via an explicit `search_term`. The
-                # request's `per_page` default (10) is tuned for a single-term
-                # search; a broad, unfiltered pull needs more volume to carry real
-                # topic diversity, so use at least 40 here unless the caller asked
-                # for more.
-                result = regulatory_events.search_documents_broad(per_page=max(request.per_page, 40))
-        except Exception as exc:
-            raise HTTPException(502, f"Federal Register fetch failed: {exc}") from exc
-        documents = _dataclass_list(result.documents)
-
-    for d in documents:
-        d.setdefault("source", "regulatory")
-
     portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
     if not portfolios:
-        return {"documents_scanned": len(documents), "portfolios_checked": 0, "alerts": []}
+        return {**_EMPTY_REGULATORY_SCAN_SHAPE, "status": "idle", "last_success_at": None, "error_message": None}
 
-    alerts = run_alert_scan(documents=documents, portfolios=portfolios)
-    return {"documents_scanned": len(documents), "portfolios_checked": len(portfolios), "alerts": alerts}
+    if request.documents:
+        result = _perform_regulatory_scan(request, portfolios)
+        return {**result, "status": "idle", "last_success_at": None, "error_message": None}
+
+    cache_key = request.user_id or (
+        ",".join(sorted(request.portfolio_holdings)) if request.portfolio_holdings else None
+    )
+    if not cache_key:
+        result = _perform_regulatory_scan(request, portfolios)
+        return {**result, "status": "idle", "last_success_at": None, "error_message": None}
+
+    cached = alerts_db.get_cached_scan(cache_key, "regulatory")
+    if not cached or (cached["status"] != "scanning" and not _scan_is_fresh(cached)):
+        alerts_db.mark_scan_started(cache_key, "regulatory")
+        background_tasks.add_task(_run_regulatory_scan_background, cache_key, request, portfolios)
+        base = (cached.get("result") if cached else None) or _EMPTY_REGULATORY_SCAN_SHAPE
+        return {
+            **base, "status": "scanning",
+            "last_success_at": cached["last_success_at"] if cached else None,
+            "error_message": None,
+        }
+
+    return _cached_regulatory_response(cache_key)
+
+
+@router.get("/alerts/scan/status")
+def alerts_scan_status(user_id: str = Query(...)):
+    """Read-only poll of the current cached regulatory-scan state for `user_id`."""
+    return _cached_regulatory_response(user_id, status_if_missing="idle")
 
 
 class AlertScanNewsRequest(BaseModel):
@@ -480,55 +540,30 @@ def _article_summary(doc: dict) -> str:
     return first_sentence[:280]
 
 
-@router.post("/alerts/scan-news")
-def alerts_scan_news(request: AlertScanNewsRequest):
-    """Scan a real portfolio's actual held tickers' real recent news (via the app's
-    existing StocksFeed integration). Returns THREE distinct tiers, per the product
-    requirement that news visibility never depend on the confirmed-alert threshold:
+_EMPTY_NEWS_SCAN_SHAPE = {
+    "articles_scanned": 0, "portfolios_checked": 0, "alerts": [],
+    "articles": [], "investigation_candidates": [], "confirmed_alerts": [],
+    "diagnostics": {"per_ticker": {}, "error": None},
+}
 
-    - `articles`: every real, deduplicated article found for a held ticker --
-      headline, publisher URL, date, ticker, a short factual one-line summary --
-      regardless of whether it became a candidate or an alert. Never empty just
-      because nothing was confirmed; only empty if there's genuinely no real news.
-    - `investigation_candidates`: articles with a real entity/relationship match
-      (direct mention or a supply-chain/material link) that did NOT clear Stage-2
-      verification as alert-worthy -- plausible, not confirmed.
-    - `confirmed_alerts`: the existing strict, evidence-gated tier, unchanged in
-      rigor, each carrying a `source: "news"` marker (never upgraded to the filing
-      path's `verified_fact` confidence language merely for being news-sourced).
+# How long a cached news-scan result is trusted before a refresh is kicked off in the
+# background. A real scan is expensive (Bedrock verification per genuine candidate,
+# confirmed live at 182s for a 3-ticker portfolio) -- this is not meant to be
+# real-time, just fresh enough that a page load doesn't block on it.
+_NEWS_SCAN_FRESHNESS_MINUTES = 10
 
-    `alerts` (the prior flat shape) is also still returned for backward compatibility
-    with existing callers/tests.
 
-    A direct mention (the article literally names a held company, by ticker, company
-    name, or a named executive) makes an article ELIGIBLE for `articles` and
-    `investigation_candidates` -- it does NOT by itself create a confirmed alert;
-    that still requires clearing the same Stage-2 materiality/evidence check as
-    before. See `exposure_tools.load_company_graph`'s always-on direct-mention check
-    (separate from the `strict_materials_only`-gated supplier/competitor extraction)
-    for why this used to silently drop the biggest real stories about a holding --
-    confirmed live, an NVIDIA CEO-departure story produced zero candidates at all
-    before this fix, not because it was judged irrelevant, but because it was never
-    even considered.
+def _perform_news_scan(portfolios: dict[str, list[str]], limit_per_ticker: int) -> dict:
+    """The actual, expensive scan work -- real StocksFeed fetch + real Stage-2
+    Bedrock verification across every genuine candidate. Pulled out of the route
+    handler so it can be run either synchronously (no user_id to cache against -- the
+    background/ops "scan everyone" case) or via FastAPI BackgroundTasks (the normal,
+    per-user, page-load-triggered case) without duplicating logic.
     """
-    portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
-    if not portfolios:
-        return {
-            "articles_scanned": 0, "portfolios_checked": 0, "alerts": [],
-            "articles": [], "investigation_candidates": [], "confirmed_alerts": [],
-            "diagnostics": {"per_ticker": {}, "error": None},
-        }
-
     all_tickers = sorted({ticker for symbols in portfolios.values() for ticker in symbols})
-    try:
-        documents, per_ticker_diag = news_stocksfeed.fetch_news_documents_for_tickers_diagnostic(
-            all_tickers, limit_per_ticker=request.limit_per_ticker
-        )
-    except Exception as exc:
-        # A total, unexpected failure (not an individual ticker's StocksFeedError,
-        # which per_ticker_diag already records per-ticker) -- distinguish this from
-        # a genuine "no news" empty result.
-        raise HTTPException(502, f"StocksFeed fetch failed: {exc}") from exc
+    documents, per_ticker_diag = news_stocksfeed.fetch_news_documents_for_tickers_diagnostic(
+        all_tickers, limit_per_ticker=limit_per_ticker
+    )
 
     failed_tickers = [t for t, d in per_ticker_diag.items() if d["error"]]
     all_failed = bool(all_tickers) and len(failed_tickers) == len(all_tickers)
@@ -578,3 +613,98 @@ def alerts_scan_news(request: AlertScanNewsRequest):
         "confirmed_alerts": confirmed_alerts,
         "diagnostics": diagnostics,
     }
+
+
+def _run_news_scan_background(cache_key: str, portfolios: dict[str, list[str]], limit_per_ticker: int) -> None:
+    try:
+        result = _perform_news_scan(portfolios, limit_per_ticker)
+    except Exception as exc:
+        alerts_db.save_scan_error(cache_key, "news", f"{type(exc).__name__}: {exc}")
+        return
+    alerts_db.save_scan_success(cache_key, "news", result)
+
+
+def _scan_is_fresh(cached: dict | None) -> bool:
+    if not cached or not cached.get("last_success_at"):
+        return False
+    from datetime import datetime, timedelta, timezone
+
+    success_at = datetime.fromisoformat(cached["last_success_at"])
+    return datetime.now(timezone.utc) - success_at < timedelta(minutes=_NEWS_SCAN_FRESHNESS_MINUTES)
+
+
+def _cached_news_response(cache_key: str, status_if_missing: str = "idle") -> dict:
+    cached = alerts_db.get_cached_scan(cache_key, "news")
+    base = (cached.get("result") if cached else None) or _EMPTY_NEWS_SCAN_SHAPE
+    return {
+        **base,
+        "status": cached["status"] if cached else status_if_missing,
+        "last_success_at": cached["last_success_at"] if cached else None,
+        "error_message": (cached.get("error_message") if cached and cached["status"] == "error" else None),
+    }
+
+
+@router.post("/alerts/scan-news")
+def alerts_scan_news(request: AlertScanNewsRequest, background_tasks: BackgroundTasks):
+    """Scan a real portfolio's actual held tickers' real recent news (via the app's
+    existing StocksFeed integration). Returns THREE distinct tiers, per the product
+    requirement that news visibility never depend on the confirmed-alert threshold:
+
+    - `articles`: every real, deduplicated article found for a held ticker --
+      headline, publisher URL, date, ticker, a short factual one-line summary --
+      regardless of whether it became a candidate or an alert. Never empty just
+      because nothing was confirmed; only empty if there's genuinely no real news.
+    - `investigation_candidates`: articles with a real entity/relationship match
+      (direct mention or a supply-chain/material link) that did NOT clear Stage-2
+      verification as alert-worthy -- plausible, not confirmed.
+    - `confirmed_alerts`: the strict, evidence-gated tier. For a direct news mention
+      specifically, "materially significant" is NOT enough on its own -- promotion
+      requires the article itself to report a concrete, quantified transmission
+      signal (see `verification._classify_direct_news`'s 5-level distinction);
+      a real, significant story with no quantified signal lands in
+      `investigation_candidates` instead. Each confirmed entry carries a
+      `source: "news"` marker (never upgraded to the filing path's `verified_fact`
+      confidence language merely for being news-sourced) plus `classification_tier`
+      and `exposure_mechanism` for the frontend to render the distinction.
+
+    This scan is expensive (real Stage-2 Bedrock verification per genuine candidate --
+    confirmed live at 182s for a 3-ticker portfolio) and MUST NOT block a page load.
+    When `user_id` (or, failing that, the sorted portfolio_holdings) is given as a
+    cache key: this returns IMMEDIATELY with the last cached result (status 'idle' if
+    fresh, 'scanning' if a refresh was just kicked off in the background, 'error' with
+    the last good result still attached if the last refresh failed) rather than
+    blocking on a fresh scan. Poll `GET /alerts/scan-news/status` to see when a
+    background refresh completes. Only the background/ops "scan every real user"
+    case (no portfolio_holdings or user_id given) still runs synchronously, since
+    there's no single per-caller cache key for it.
+    """
+    portfolios = _resolve_portfolios(request.portfolio_holdings, request.user_id)
+    if not portfolios:
+        return {**_EMPTY_NEWS_SCAN_SHAPE, "status": "idle", "last_success_at": None, "error_message": None}
+
+    cache_key = request.user_id or (
+        ",".join(sorted(request.portfolio_holdings)) if request.portfolio_holdings else None
+    )
+    if not cache_key:
+        result = _perform_news_scan(portfolios, request.limit_per_ticker)
+        return {**result, "status": "idle", "last_success_at": None, "error_message": None}
+
+    cached = alerts_db.get_cached_scan(cache_key, "news")
+    if not cached or (cached["status"] != "scanning" and not _scan_is_fresh(cached)):
+        alerts_db.mark_scan_started(cache_key, "news")
+        background_tasks.add_task(_run_news_scan_background, cache_key, portfolios, request.limit_per_ticker)
+        base = (cached.get("result") if cached else None) or _EMPTY_NEWS_SCAN_SHAPE
+        return {
+            **base, "status": "scanning",
+            "last_success_at": cached["last_success_at"] if cached else None,
+            "error_message": None,
+        }
+
+    return _cached_news_response(cache_key)
+
+
+@router.get("/alerts/scan-news/status")
+def alerts_scan_news_status(user_id: str = Query(...)):
+    """Read-only poll of the current cached news-scan state for `user_id` -- never
+    triggers a new scan itself (that only happens from the POST endpoint above)."""
+    return _cached_news_response(user_id, status_if_missing="idle")
