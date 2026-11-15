@@ -258,20 +258,40 @@ def list_investigation_history(user_id: str, limit: int = 10) -> list[dict]:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT event_description, portfolio_holdings, result_json, created_at "
+            "SELECT id, event_description, portfolio_holdings, result_json, created_at "
             "FROM riskripple_investigation_history WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
             (user_id, limit),
         )
         rows = cur.fetchall()
         return [
             {
+                "id": entry_id,
                 "event_description": event_description,
                 "portfolio_holdings": portfolio_holdings,
                 "result": result_json,
                 "created_at": created_at.isoformat(),
             }
-            for event_description, portfolio_holdings, result_json, created_at in rows
+            for entry_id, event_description, portfolio_holdings, result_json, created_at in rows
         ]
+    finally:
+        conn.close()
+
+
+def delete_investigation_history(user_id: str, entry_id: int) -> bool:
+    """Deletes one past investigation, scoped to `user_id` so a caller can never
+    delete another user's row even if they guess an id. Returns whether a row was
+    actually deleted (false if it didn't exist or belonged to someone else)."""
+    ensure_history_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM riskripple_investigation_history WHERE id = %s AND user_id = %s",
+            (entry_id, user_id),
+        )
+        deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
     finally:
         conn.close()
 

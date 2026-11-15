@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, ExternalLink, History, Loader2, ShieldAlert } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -8,10 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getHistory, pollAlertsScan, triggerAlertsScan, type CombinedScanState } from "@/server/alerts-actions";
-import type { AlertMatch, InvestigationHistoryEntry, ScanResponse } from "@/server/riskripple";
+import { pollAlertsScan, triggerAlertsScan, type CombinedScanState } from "@/server/alerts-actions";
+import type { AlertMatch, ScanResponse } from "@/server/riskripple";
 
-import { ATTENTION_META, FindingsCards } from "./findings-cards";
 import { InvestigateForm, type Prefill } from "./investigate-form";
 
 const POLL_INTERVAL_MS = 7000;
@@ -93,34 +93,7 @@ function MatchAccordionItem({ match, keyId }: { match: AlertMatch; keyId: string
   );
 }
 
-// Rendering every past investigation fully expanded, forever, buried the page under
-// repeated full briefings + per-stock findings + evidence for every single past query
-// -- confirmed by the user as "turns into a mess" after running just a few. Only the
-// newest survives expanded by default; everything older collapses to one line (date,
-// tickers, attention verdict, the event text) that expands on click.
-function HistoryEntryItem({ entry, defaultOpen }: { entry: InvestigationHistoryEntry; defaultOpen: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const attention = entry.result.event_briefing
-    ? ATTENTION_META[entry.result.event_briefing.attention_level] ?? ATTENTION_META.INSUFFICIENT_EVIDENCE
-    : null;
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen} className="border-border border-b pb-4 last:border-0 last:pb-0">
-      <CollapsibleTrigger className="flex w-full flex-wrap items-center gap-2 text-left text-sm hover:underline">
-        <ChevronDown className={`size-4 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`} />
-        <span className="text-muted-foreground text-xs">{new Date(entry.created_at).toLocaleString()}</span>
-        <Badge variant="outline" className="text-xs">{entry.portfolio_holdings.join(", ")}</Badge>
-        {attention && <Badge variant={attention.variant} className="text-xs">{attention.label}</Badge>}
-        <span className="flex-1 truncate font-medium">{entry.event_description}</span>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-3">
-        <FindingsCards result={entry.result} />
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-type StatusFilter = "all" | "confirmed" | "candidate" | "history";
+type StatusFilter = "all" | "confirmed" | "candidate";
 type SortMode = "priority" | "recency";
 
 export function InvestigationsWorkspace({
@@ -132,10 +105,8 @@ export function InvestigationsWorkspace({
 }) {
   const [state, setState] = useState<CombinedScanState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [history, setHistory] = useState<InvestigationHistoryEntry[] | null>(null);
   const [prefill, setPrefill] = useState<Prefill | null>(initialPrefill ?? null);
   const [formOpen, setFormOpen] = useState(true);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef(false);
 
@@ -156,9 +127,6 @@ export function InvestigationsWorkspace({
       if (cancelled) return;
       if (!result.ok) setLoadError(result.error);
       else setState(result.data);
-    });
-    getHistory().then((result) => {
-      if (!cancelled && result.ok) setHistory(result.data);
     });
     return () => {
       cancelled = true;
@@ -184,17 +152,6 @@ export function InvestigationsWorkspace({
     return () => clearInterval(interval);
   }, [state?.news.status, state?.regulatory.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function handleReinvestigate(eventDescription: string, tickers: string) {
-    setPrefill({ eventDescription, tickers });
-    setFormOpen(true);
-    requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }
-
-  async function refreshHistory() {
-    const result = await getHistory();
-    if (result.ok) setHistory(result.data);
-  }
-
   if (loadError) {
     return (
       <Card>
@@ -214,13 +171,11 @@ export function InvestigationsWorkspace({
 
   const tickerSet = new Set<string>();
   for (const m of [...confirmed, ...candidates]) if (m.symbol) tickerSet.add(m.symbol);
-  for (const h of history ?? []) for (const t of h.portfolio_holdings) tickerSet.add(t);
   const tickers = [...tickerSet].sort();
 
-  function matchesTicker(symbol: string | undefined, holdings?: string[]) {
+  function matchesTicker(symbol: string | undefined) {
     if (tickerFilter === "all") return true;
-    if (symbol) return symbol === tickerFilter;
-    return holdings?.includes(tickerFilter) ?? false;
+    return symbol === tickerFilter;
   }
 
   const sortMatches = (items: AlertMatch[]) =>
@@ -234,9 +189,6 @@ export function InvestigationsWorkspace({
     : [];
   const filteredCandidates = statusFilter === "all" || statusFilter === "candidate"
     ? sortMatches(candidates.filter((m) => matchesTicker(m.symbol)))
-    : [];
-  const filteredHistory = statusFilter === "all" || statusFilter === "history"
-    ? (history ?? []).filter((h) => matchesTicker(undefined, h.portfolio_holdings))
     : [];
 
   return (
@@ -275,7 +227,6 @@ export function InvestigationsWorkspace({
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="confirmed">Confirmed alerts</SelectItem>
             <SelectItem value="candidate">Candidates</SelectItem>
-            <SelectItem value="history">Past investigations</SelectItem>
           </SelectContent>
         </Select>
         <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
@@ -344,41 +295,21 @@ export function InvestigationsWorkspace({
             Ask about a specific event
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2">
-            <InvestigateForm defaultTickers={defaultTickers} prefill={prefill} onComplete={refreshHistory} />
+            <InvestigateForm defaultTickers={defaultTickers} prefill={prefill} />
           </CollapsibleContent>
         </Collapsible>
       </div>
 
-      {/* Secondary review material, not the primary action -- moved below the form
-          and collapsed by default so it doesn't push the thing you actually came to
-          do (ask a new question) down the page. Explicitly filtering to "Past
-          investigations" still forces it open. */}
-      {(statusFilter === "all" || statusFilter === "history") && (
-        <Collapsible open={historyOpen || statusFilter === "history"} onOpenChange={setHistoryOpen}>
-          <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-sm hover:underline">
-            <ChevronDown className={`size-4 transition-transform ${historyOpen || statusFilter === "history" ? "" : "-rotate-90"}`} />
-            <History className="size-4" />
-            Previously completed manual investigations{history ? ` (${filteredHistory.length})` : ""}
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2">
-            <Card>
-              <CardContent className="flex flex-col gap-4 pt-6">
-                {history === null ? (
-                  <p className="text-muted-foreground text-sm">Loading…</p>
-                ) : filteredHistory.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    No past manual investigations for this filter yet — run one above.
-                  </p>
-                ) : (
-                  filteredHistory.map((h, i) => (
-                    <HistoryEntryItem key={h.created_at} entry={h} defaultOpen={i === 0} />
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+      {/* Past investigations now live on their own page (see navigation) -- this
+          page is the live/current session: real-time alerts plus whatever you're
+          investigating right now, not a growing archive. */}
+      <Link
+        href="/dashboard/risk-ripple/history"
+        className="text-muted-foreground flex w-fit items-center gap-1.5 text-sm hover:underline"
+      >
+        <History className="size-4" />
+        View previously completed manual investigations
+      </Link>
     </div>
   );
 }

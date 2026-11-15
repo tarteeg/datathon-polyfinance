@@ -1,4 +1,4 @@
-import { Gauge, House, type LucideIcon, MessageSquare, Newspaper, ShieldAlert } from "lucide-react";
+import { Gauge, History, House, type LucideIcon, MessageSquare, Newspaper, ShieldAlert } from "lucide-react";
 
 export interface NavSubItem {
   id: string;
@@ -64,6 +64,12 @@ export const sidebarItems: NavGroup[] = [
         title: "Portfolio Risk & Investigations",
         url: "/dashboard/risk-ripple/investigations",
         icon: ShieldAlert,
+      },
+      {
+        id: "risk-ripple-history",
+        title: "Past Investigations",
+        url: "/dashboard/risk-ripple/history",
+        icon: History,
       },
     ],
   },

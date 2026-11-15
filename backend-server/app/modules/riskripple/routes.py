@@ -495,6 +495,15 @@ def investigate_history(user_id: str = Query(...), limit: int = Query(10, ge=1, 
     return {"history": alerts_db.list_investigation_history(user_id, limit)}
 
 
+@router.delete("/investigate/history/{entry_id}")
+def delete_investigate_history(entry_id: int, user_id: str = Query(...)):
+    """Deletes one past manual investigation. Scoped to `user_id` in the query itself
+    (see `alerts_db.delete_investigation_history`) so a caller can only ever delete
+    their own history, never another user's by guessing an id."""
+    deleted = alerts_db.delete_investigation_history(user_id, entry_id)
+    return {"deleted": deleted}
+
+
 class AlertScanDocument(BaseModel):
     document_number: str
     title: str

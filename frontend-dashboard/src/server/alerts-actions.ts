@@ -3,6 +3,7 @@
 import { requireSession } from "@/lib/session";
 import { getHoldings } from "@/server/portfolio";
 import {
+  deleteInvestigationHistory,
   getInvestigationHistory,
   pollNewsScan,
   pollRegulatoryScan,
@@ -70,14 +71,27 @@ export async function pollAlertsScan(): Promise<PollAlertsScanResult> {
 
 export type GetHistoryResult = { ok: true; data: InvestigationHistoryEntry[] } | { ok: false };
 
-/** Previously completed manual investigations for the current user -- the
- * Investigations page's third category. */
-export async function getHistory(): Promise<GetHistoryResult> {
+/** Previously completed manual investigations for the current user. `limit` defaults
+ * to 10 (enough for the Investigations page's "most recent" preview); the dedicated
+ * History page asks for the full 50-row cap instead. */
+export async function getHistory(limit = 10): Promise<GetHistoryResult> {
   const { user } = await requireSession();
   try {
-    const data = await getInvestigationHistory(user.id);
+    const data = await getInvestigationHistory(user.id, limit);
     return { ok: true, data };
   } catch {
     return { ok: false };
+  }
+}
+
+export type DeleteHistoryResult = { ok: true } | { ok: false; error: string };
+
+export async function deleteHistoryEntry(entryId: number): Promise<DeleteHistoryResult> {
+  const { user } = await requireSession();
+  try {
+    const deleted = await deleteInvestigationHistory(user.id, entryId);
+    return deleted ? { ok: true } : { ok: false, error: "That investigation was already removed." };
+  } catch {
+    return { ok: false, error: "Couldn't delete that investigation. Try again." };
   }
 }
