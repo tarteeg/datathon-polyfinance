@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from app.riskripple.alerts import db as alerts_db
 from app.riskripple.alerts.db import get_all_portfolios
 from app.riskripple.alerts.pipeline import run_alert_scan
+from app.riskripple.briefing import build_event_briefing, persona_attention_level
 from app.riskripple.finance.live_portfolio import (
     compute_annualized_volatility,
     compute_real_weights,
@@ -239,7 +240,7 @@ def _build_portfolio_and_persona_sections(
     portfolio_quantities: dict[str, float] | None,
     exposure_classifications: dict[str, dict],
     industries: dict[str, str],
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, dict[str, str], dict[str, float]]:
     """Deterministic (non-LLM) portfolio-impact and persona-comparison sections, built
     from the agent's own recorded exposure tiers -- never an LLM-generated number."""
     tiers = {
@@ -317,7 +318,7 @@ def _build_portfolio_and_persona_sections(
         for a in persona_assessments
     ]
 
-    return portfolio_impact, persona_comparison
+    return portfolio_impact, persona_comparison, tiers, weights
 
 
 def _summarize_message(message: dict) -> dict:
@@ -391,6 +392,14 @@ def investigate(request: InvestigateRequest):
             "trace": [],
             "error": None,
             "too_vague": True,
+            "event_briefing": build_event_briefing(
+                event_description=request.event_description,
+                investigation_status="insufficient_evidence",
+                tiers={},
+                weights={},
+                exposure_classifications={},
+                followup_finding=None,
+            ),
         }
 
     try:
@@ -421,6 +430,14 @@ def investigate(request: InvestigateRequest):
             "trace": [],
             "error": f"{type(exc).__name__}: {exc}",
             "note": "Agent invocation failed -- likely missing/expired Bedrock credentials or model access in this region.",
+            "event_briefing": build_event_briefing(
+                event_description=request.event_description,
+                investigation_status="failed",
+                tiers={},
+                weights={},
+                exposure_classifications={},
+                followup_finding=None,
+            ),
         }
 
     raw_messages = [m if isinstance(m, dict) else dict(m) for m in agent.messages]
@@ -428,12 +445,26 @@ def investigate(request: InvestigateRequest):
 
     exposure_classifications, followup_finding, industries = _extract_structured_findings(raw_messages)
     try:
-        portfolio_impact, persona_comparison = _build_portfolio_and_persona_sections(
+        portfolio_impact, persona_comparison, tiers, weights = _build_portfolio_and_persona_sections(
             request.portfolio_holdings, request.portfolio_quantities, exposure_classifications, industries
         )
     except Exception as exc:  # noqa: BLE001 -- quant/persona sections are additive; never fail the whole response
         portfolio_impact = {"error": f"Could not compute portfolio impact: {type(exc).__name__}: {exc}"}
         persona_comparison = []
+        tiers, weights = {}, {}
+
+    event_briefing = build_event_briefing(
+        event_description=request.event_description,
+        investigation_status="completed",
+        tiers=tiers,
+        weights=weights,
+        exposure_classifications=exposure_classifications,
+        followup_finding=followup_finding,
+    )
+    for entry in persona_comparison:
+        entry["attention_level"] = persona_attention_level(
+            event_briefing["attention_level"], challenges_the_request=entry["challenges_the_request"]
+        )
 
     response = {
         "event_description": request.event_description,
@@ -445,6 +476,7 @@ def investigate(request: InvestigateRequest):
         "followup_investigation": followup_finding,
         "portfolio_impact": portfolio_impact,
         "persona_comparison": persona_comparison,
+        "event_briefing": event_briefing,
     }
     if request.user_id:
         try:

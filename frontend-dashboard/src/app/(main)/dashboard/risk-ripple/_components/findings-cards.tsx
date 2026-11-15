@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownRight, ChevronDown, ExternalLink, Wrench } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ChevronDown, ExternalLink, FlaskConical, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -63,6 +63,15 @@ function priorityBadgeVariant(priority: string): "default" | "secondary" | "outl
   if (priority === "Medium" || priority === "Low") return "secondary";
   return "outline";
 }
+
+// Attention-level vocabulary matches app/riskripple/briefing.py's ATTENTION_LEVELS
+// exactly -- this is a decision about where to look next, never a loss prediction.
+const ATTENTION_META: Record<string, { label: string; variant: "destructive" | "default" | "secondary" | "outline" }> = {
+  ESCALATE: { label: "Escalate", variant: "destructive" },
+  REVIEW: { label: "Review", variant: "default" },
+  MONITOR: { label: "Monitor", variant: "secondary" },
+  INSUFFICIENT_EVIDENCE: { label: "Insufficient evidence", variant: "outline" },
+};
 
 function formatMoney(n: number | undefined): string {
   if (n == null || Number.isNaN(n)) return "Not quantified";
@@ -131,6 +140,94 @@ function extractSources(trace: InvestigateResult["trace"]): { url: string; label
 
 type SortMode = "priority" | "recency" | "ticker";
 
+// The investor-facing headline: how much of the portfolio (by WEIGHT, never a dollar
+// guess) falls into each exposure bucket, and the attention decision that follows from
+// it. This is deliberately the first thing rendered -- everything below is detail.
+function EventBriefingPanel({ result }: { result: InvestigateResult }) {
+  const briefing = result.event_briefing;
+  if (!briefing) return null;
+
+  const attention = ATTENTION_META[briefing.attention_level] ?? ATTENTION_META.INSUFFICIENT_EVIDENCE;
+  const exposedPct = briefing.direct_exposure_pct + briefing.potential_exposure_pct;
+
+  return (
+    <Card className="border-l-4 border-l-primary">
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-base">Portfolio risk briefing</CardTitle>
+          <Badge variant={attention.variant}>{attention.label}</Badge>
+          {briefing.no_established_exposure && (
+            <span className="text-muted-foreground text-xs">Checked — no exposure established</span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-sm">{briefing.what_happened}</p>
+
+        {briefing.investigation_status === "completed" ? (
+          <>
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div>
+                <div className="text-muted-foreground text-xs">Directly exposed</div>
+                <div className="text-lg font-semibold">{formatPct(briefing.direct_exposure_pct)}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">Potentially exposed</div>
+                <div className="text-lg font-semibold">{formatPct(briefing.potential_exposure_pct)}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-xs">No established link</div>
+                <div className="text-lg font-semibold">{formatPct(briefing.no_established_link_pct)}</div>
+              </div>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {briefing.affected_holdings_count > 0
+                ? `By portfolio weight, not predicted loss. Affected holdings: ${briefing.affected_holdings.join(", ")}.`
+                : "By portfolio weight, not predicted loss."}
+            </p>
+
+            {briefing.why_it_matters && (
+              <div>
+                <h4 className="mb-1 text-xs font-medium">Why it matters</h4>
+                <p className="text-muted-foreground text-sm">{briefing.why_it_matters}</p>
+              </div>
+            )}
+
+            {briefing.uncertain.length > 0 && (
+              <div>
+                <h4 className="mb-1 flex items-center gap-1 text-xs font-medium">
+                  <AlertTriangle className="size-3.5" />
+                  What&apos;s uncertain
+                </h4>
+                <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
+                  {briefing.uncertain.map((u, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span aria-hidden>•</span>
+                      <span>{u}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {exposedPct === 0 && briefing.affected_holdings_count === 0 && (
+              <p className="text-muted-foreground text-sm">
+                Direction of any future impact is uncertain — no quantified prediction is made here.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            {briefing.investigation_status === "insufficient_evidence"
+              ? "This event description was too vague or unscoped to investigate against the portfolio. Provide a more specific event (a company, regulation, or region) to get an exposure assessment."
+              : "The investigation could not complete. Try again, or narrow the event description."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function FindingsCards({ result }: { result: InvestigateResult }) {
   const [tickerFilter, setTickerFilter] = useState<string>("all");
   const [sortMode, setSortMode] = useState<SortMode>("priority");
@@ -168,6 +265,8 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <EventBriefingPanel result={result} />
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-xs">Filter by stock</span>
@@ -221,9 +320,6 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
               <Badge variant="outline" className="text-xs">
                 {f.meta.confidence}
               </Badge>
-              <span className="text-muted-foreground ml-auto text-xs">
-                {f.hasQuantifiedImpact ? formatMoney(f.positionPnl) : "Impact not quantified"}
-              </span>
             </div>
 
             <p className="text-sm font-medium">{result.event_description}</p>
@@ -268,6 +364,24 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
                     No external source links were captured in this run's tool trace.
                   </p>
                 )}
+              </CollapsibleContent>
+            </Collapsible>
+
+            <Collapsible>
+              <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-xs hover:underline">
+                <FlaskConical className="size-3.5" />
+                Portfolio stress test (hypothetical)
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 flex flex-col gap-1">
+                <p className="text-sm font-medium">
+                  {f.hasQuantifiedImpact ? formatMoney(f.positionPnl) : "Impact not quantified"}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Hypothetical scenario only, not a prediction — a fixed shock percentage for this evidence tier
+                  applied to an assumed portfolio value
+                  {portfolioImpact?.assumptions_label ? ` (${portfolioImpact.assumptions_label})` : ""}. Exposure
+                  percentages above are the primary measure; this dollar figure is for scenario planning only.
+                </p>
               </CollapsibleContent>
             </Collapsible>
           </CardContent>

@@ -43,6 +43,24 @@ export type PersonaComparison = {
   esg_notes: string[];
   verdict: string;
   challenges_the_request: boolean;
+  attention_level?: AttentionLevel;
+};
+
+// Matches app/riskripple/briefing.py's ATTENTION_LEVELS exactly.
+export type AttentionLevel = "ESCALATE" | "REVIEW" | "MONITOR" | "INSUFFICIENT_EVIDENCE";
+
+export type EventBriefing = {
+  what_happened: string;
+  investigation_status: "completed" | "insufficient_evidence" | "failed";
+  attention_level: AttentionLevel;
+  no_established_exposure: boolean;
+  direct_exposure_pct: number;
+  potential_exposure_pct: number;
+  no_established_link_pct: number;
+  affected_holdings: string[];
+  affected_holdings_count: number;
+  why_it_matters: string | null;
+  uncertain: string[];
 };
 
 export type InvestigateResult = {
@@ -55,6 +73,7 @@ export type InvestigateResult = {
   followup_investigation?: FollowupInvestigation;
   portfolio_impact?: PortfolioImpact;
   persona_comparison?: PersonaComparison[];
+  event_briefing?: EventBriefing;
 };
 
 export async function investigate(
