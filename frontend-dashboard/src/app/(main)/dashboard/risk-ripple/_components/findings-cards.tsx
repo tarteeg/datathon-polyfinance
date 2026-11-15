@@ -277,7 +277,7 @@ export function FindingsCards({ result }: { result: InvestigateResult }) {
       <Collapsible>
         <CollapsibleTrigger className="text-muted-foreground flex items-center gap-2 text-xs hover:underline">
           <Wrench className="size-3.5" />
-          Investigation steps &amp; full report ({result.trace.length} trace messages)
+          Investigation steps & full report ({result.trace.length} trace messages)
         </CollapsibleTrigger>
         <CollapsibleContent className="mt-2 flex flex-col gap-4">
           {result.answer && (
