@@ -135,6 +135,10 @@ class InvestigateRequest(BaseModel):
     # instead of an assumed equal weighting -- see _extract_structured_findings and
     # _build_portfolio_and_persona_sections below.
     portfolio_quantities: dict[str, float] | None = None
+    # When given, a successful investigation is persisted to
+    # riskripple_investigation_history so it can be revisited later (the
+    # Investigations page's "previously completed manual investigations" tier).
+    user_id: str | None = None
 
 
 def _extract_structured_findings(messages: list[dict]) -> tuple[dict[str, dict], dict | None, dict[str, str]]:
@@ -431,7 +435,7 @@ def investigate(request: InvestigateRequest):
         portfolio_impact = {"error": f"Could not compute portfolio impact: {type(exc).__name__}: {exc}"}
         persona_comparison = []
 
-    return {
+    response = {
         "event_description": request.event_description,
         "portfolio_holdings": request.portfolio_holdings,
         "answer": str(result),
@@ -442,6 +446,21 @@ def investigate(request: InvestigateRequest):
         "portfolio_impact": portfolio_impact,
         "persona_comparison": persona_comparison,
     }
+    if request.user_id:
+        try:
+            alerts_db.save_investigation_history(
+                request.user_id, request.event_description, request.portfolio_holdings, response
+            )
+        except Exception:  # noqa: BLE001 -- history persistence is additive, never fail the response over it
+            pass
+    return response
+
+
+@router.get("/investigate/history")
+def investigate_history(user_id: str = Query(...), limit: int = Query(10, ge=1, le=50)):
+    """Most recent completed manual investigations for `user_id` -- the Investigations
+    page's third category, alongside confirmed_alerts and investigation_candidates."""
+    return {"history": alerts_db.list_investigation_history(user_id, limit)}
 
 
 class AlertScanDocument(BaseModel):

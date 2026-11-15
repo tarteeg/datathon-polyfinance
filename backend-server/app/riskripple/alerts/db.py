@@ -209,6 +209,73 @@ def save_scan_error(user_id: str, scan_type: str, error_message: str) -> None:
         conn.close()
 
 
+# Manual investigation history: each call to POST /investigate only ever showed its
+# result for that one request -- nothing persisted, so there was no way to revisit a
+# past manual investigation later. Same minimal, isolated, idempotent-create pattern
+# as the other two tables above.
+_ENSURE_HISTORY_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS riskripple_investigation_history (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    event_description TEXT NOT NULL,
+    portfolio_holdings TEXT[] NOT NULL,
+    result_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+
+def ensure_history_table() -> None:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(_ENSURE_HISTORY_TABLE_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_investigation_history(user_id: str, event_description: str, portfolio_holdings: list[str], result: dict) -> None:
+    import json as _json
+
+    ensure_history_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO riskripple_investigation_history "
+            "(user_id, event_description, portfolio_holdings, result_json) VALUES (%s, %s, %s, %s)",
+            (user_id, event_description, portfolio_holdings, _json.dumps(result)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_investigation_history(user_id: str, limit: int = 10) -> list[dict]:
+    ensure_history_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT event_description, portfolio_holdings, result_json, created_at "
+            "FROM riskripple_investigation_history WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+            (user_id, limit),
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "event_description": event_description,
+                "portfolio_holdings": portfolio_holdings,
+                "result": result_json,
+                "created_at": created_at.isoformat(),
+            }
+            for event_description, portfolio_holdings, result_json, created_at in rows
+        ]
+    finally:
+        conn.close()
+
+
 def filter_unseen(candidates: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
     """`candidates` is a list of (document_key, user_id, symbol) triples. Returns only
     the ones NOT already recorded as seen, and atomically records all of `candidates`
