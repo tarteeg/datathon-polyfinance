@@ -76,21 +76,49 @@ export type InvestigateResult = {
   event_briefing?: EventBriefing;
 };
 
-export async function investigate(
+// The full agent investigation can take well over a minute -- confirmed live, long
+// enough that the ECS Express Gateway's own idle timeout returns a 504 to a
+// synchronous caller before the backend finishes (even though it keeps running and
+// completes successfully regardless). Same trigger-then-poll split already used for
+// the alert-scan endpoints, keyed by a client-generated `requestId` since a user can
+// have more than one investigation in flight.
+export async function triggerInvestigation(
   eventDescription: string,
   tickers: string[],
-  userId?: string,
-): Promise<InvestigateResult> {
+  userId: string,
+  requestId: string,
+): Promise<{ status: "pending"; request_id: string }> {
   const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
   const response = await fetch(new URL("/riskripple/investigate", backend), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ event_description: eventDescription, portfolio_holdings: tickers, user_id: userId }),
+    body: JSON.stringify({
+      event_description: eventDescription,
+      portfolio_holdings: tickers,
+      user_id: userId,
+      request_id: requestId,
+    }),
     cache: "no-store",
-    // The agent can make dozens of tool calls before answering; give it real room.
-    signal: AbortSignal.timeout(120000),
+    // This returns almost immediately now (background task) -- generous timeout only
+    // as a safety net, not because it's expected to be slow.
+    signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new Error(`Investigation request failed (${response.status})`);
+  if (!response.ok) throw new Error(`Investigation trigger failed (${response.status})`);
+  return response.json();
+}
+
+export type PollInvestigationResult =
+  | { status: "pending" }
+  | ({ status: "completed" } & InvestigateResult)
+  | { status: "error"; error: string; answer: null; trace: never[] };
+
+export async function pollInvestigation(userId: string, requestId: string): Promise<PollInvestigationResult> {
+  const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
+  const url = new URL("/riskripple/investigate/status", backend);
+  url.searchParams.set("user_id", userId);
+  url.searchParams.set("request_id", requestId);
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`Investigation poll failed (${response.status})`);
   return response.json();
 }
 

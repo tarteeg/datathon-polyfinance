@@ -330,3 +330,130 @@ def filter_unseen(candidates: list[tuple[str, str, str]]) -> list[tuple[str, str
         return unseen
     finally:
         conn.close()
+
+
+# Manual investigation job tracking: POST /investigate used to run the full agent
+# loop synchronously and block on the response. Confirmed live: the richer
+# investigation prompt now reliably takes long enough that the ECS Express Gateway's
+# own idle timeout returns a 504 to the real caller before the backend finishes --
+# even though the backend keeps running and completes+saves successfully regardless
+# (verified directly against riskripple_investigation_history). Same async
+# trigger-then-poll pattern as riskripple_scan_cache, keyed by a client-generated
+# `request_id` (not just `user_id`) since a user can have more than one investigation
+# in flight, unlike a scan which is naturally one-per-(user, scan_type).
+_ENSURE_INVESTIGATE_JOBS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS riskripple_investigate_jobs (
+    user_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    result_json JSONB,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, request_id)
+);
+"""
+
+
+def ensure_investigate_jobs_table() -> None:
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(_ENSURE_INVESTIGATE_JOBS_TABLE_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_investigate_started(user_id: str, request_id: str) -> None:
+    ensure_investigate_jobs_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO riskripple_investigate_jobs (user_id, request_id, status, updated_at)
+            VALUES (%s, %s, 'pending', now())
+            ON CONFLICT (user_id, request_id) DO UPDATE
+            SET status = 'pending', updated_at = now()
+            """,
+            (user_id, request_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_investigate_success(user_id: str, request_id: str, result: dict) -> None:
+    import json as _json
+
+    ensure_investigate_jobs_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO riskripple_investigate_jobs (user_id, request_id, status, result_json, error_message, updated_at)
+            VALUES (%s, %s, 'completed', %s, NULL, now())
+            ON CONFLICT (user_id, request_id) DO UPDATE
+            SET status = 'completed', result_json = EXCLUDED.result_json, error_message = NULL, updated_at = now()
+            """,
+            (user_id, request_id, _json.dumps(result)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_investigate_error(user_id: str, request_id: str, error_message: str) -> None:
+    ensure_investigate_jobs_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO riskripple_investigate_jobs (user_id, request_id, status, error_message, updated_at)
+            VALUES (%s, %s, 'error', %s, now())
+            ON CONFLICT (user_id, request_id) DO UPDATE
+            SET status = 'error', error_message = EXCLUDED.error_message, updated_at = now()
+            """,
+            (user_id, request_id, error_message),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_investigate_job(user_id: str, request_id: str) -> dict | None:
+    ensure_investigate_jobs_table()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status, result_json, error_message FROM riskripple_investigate_jobs "
+            "WHERE user_id = %s AND request_id = %s",
+            (user_id, request_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        status, result_json, error_message = row
+        return {"status": status, "result": result_json, "error_message": error_message}
+    finally:
+        conn.close()
+
+
+def delete_investigate_job(user_id: str, request_id: str) -> None:
+    """Best-effort cleanup after a completed job has been delivered to the poller --
+    keeps this table from growing unbounded, since unlike the scan cache there is no
+    reason to keep showing a stale result for a one-shot investigation request."""
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM riskripple_investigate_jobs WHERE user_id = %s AND request_id = %s",
+            (user_id, request_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()

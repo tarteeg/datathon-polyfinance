@@ -140,6 +140,12 @@ class InvestigateRequest(BaseModel):
     # riskripple_investigation_history so it can be revisited later (the
     # Investigations page's "previously completed manual investigations" tier).
     user_id: str | None = None
+    # Client-generated (e.g. crypto.randomUUID()) idempotency key for the async
+    # trigger-then-poll flow (see POST /investigate and GET /investigate/status).
+    # Required for that flow; omitted entirely, the endpoint falls back to the old
+    # synchronous behavior (used by scripts/tests that don't care about HTTP gateway
+    # timeouts, never by the real frontend).
+    request_id: str | None = None
 
 
 def _extract_structured_findings(messages: list[dict]) -> tuple[dict[str, dict], dict | None, dict[str, str]]:
@@ -342,17 +348,24 @@ def _summarize_message(message: dict) -> dict:
     return {"role": role, "content": blocks}
 
 
-@router.post("/investigate")
-def investigate(request: InvestigateRequest):
-    """Run the Ripple Investigation Agent (Bedrock/Strands) over an event description
-    and a set of portfolio holdings. The agent establishes exposure itself, grounded in
-    each holding's real (live-fetched) SEC filing and industry classification -- not a
-    fixed semiconductor-only alias list -- so a utility holding a chip event is
-    correctly reported as unexposed, and a tech holding an unrelated event isn't
-    reflexively tied to chips either. Returns the agent's final answer plus a trace of
-    every tool call it made (tool name, input, result) for UX/explainability.
+def _run_investigation(request: InvestigateRequest) -> dict:
+    """The actual investigation work: runs the Ripple Investigation Agent
+    (Bedrock/Strands) over an event description and a set of portfolio holdings, then
+    builds the full structured response (event briefing, portfolio impact, persona
+    comparison). The agent establishes exposure itself, grounded in each holding's
+    real (live-fetched) SEC filing and industry classification -- not a fixed
+    semiconductor-only alias list -- so a utility holding a chip event is correctly
+    reported as unexposed, and a tech holding an unrelated event isn't reflexively
+    tied to chips either.
+
+    Pulled out of the route handler so it can run either synchronously (the
+    `request_id`-less legacy path, used only by scripts/tests) or via FastAPI
+    BackgroundTasks (the real frontend's path -- see POST /investigate below). Never
+    raises for an agent-construction/invocation failure -- returns an error-shaped
+    response instead, since a background task has no HTTP response to attach an
+    HTTPException to.
     """
-    # Cheap pre-check before the ~60s Bedrock agent run: does this event description
+    # Cheap pre-check before the ~60s+ Bedrock agent run: does this event description
     # name anything specific enough to investigate (a proper noun, a material, a
     # sanctions-relevant term -- the same allowlist the exposure graph itself uses),
     # or is it a bare category word like "suppliers" with nothing to trace a ripple
@@ -402,15 +415,32 @@ def investigate(request: InvestigateRequest):
             ),
         }
 
+    def _agent_build_error(detail: str) -> dict:
+        return {
+            "event_description": request.event_description,
+            "portfolio_holdings": request.portfolio_holdings,
+            "answer": None,
+            "trace": [],
+            "error": detail,
+            "event_briefing": build_event_briefing(
+                event_description=request.event_description,
+                investigation_status="failed",
+                tiers={},
+                weights={},
+                exposure_classifications={},
+                followup_finding=None,
+            ),
+        }
+
     try:
         from app.riskripple.agents.definitions import build_ripple_investigator_agent
     except Exception as exc:
-        raise HTTPException(500, f"Could not build agent (missing dependency?): {exc}") from exc
+        return _agent_build_error(f"Could not build agent (missing dependency?): {type(exc).__name__}: {exc}")
 
     try:
         agent = build_ripple_investigator_agent()
     except Exception as exc:
-        raise HTTPException(500, f"Could not construct Bedrock agent: {exc}") from exc
+        return _agent_build_error(f"Could not construct Bedrock agent: {type(exc).__name__}: {exc}")
 
     prompt = (
         f"Event: {request.event_description}\n"
@@ -486,6 +516,64 @@ def investigate(request: InvestigateRequest):
         except Exception:  # noqa: BLE001 -- history persistence is additive, never fail the response over it
             pass
     return response
+
+
+def _run_investigation_background(user_id: str, request_id: str, request: InvestigateRequest) -> None:
+    try:
+        result = _run_investigation(request)
+    except Exception as exc:  # noqa: BLE001 -- a background task has no caller to raise to
+        alerts_db.save_investigate_error(user_id, request_id, f"{type(exc).__name__}: {exc}")
+        return
+    alerts_db.save_investigate_success(user_id, request_id, result)
+
+
+@router.post("/investigate")
+def investigate(request: InvestigateRequest, background_tasks: BackgroundTasks):
+    """Trigger (or run) a Ripple Investigation Agent run. With `request_id` given (the
+    real frontend's only path), kicks off the investigation in the background and
+    returns `{"status": "pending"}` immediately -- poll GET /investigate/status with
+    the same `user_id`/`request_id` for the result. Confirmed live: the full agent
+    investigation can take well over a minute, long enough that the ECS Express
+    Gateway's own idle timeout returns the real caller a 504 before a synchronous
+    response could ever arrive, even though the backend keeps running and completes
+    successfully regardless -- this trigger/poll split is the same fix already applied
+    to the alert-scan endpoints for the same underlying reason.
+
+    Without `request_id` (scripts/tests only -- never the real frontend), runs
+    synchronously and returns the full response directly, exactly as before.
+    """
+    if not request.request_id:
+        return _run_investigation(request)
+
+    user_id = request.user_id or "anonymous"
+    alerts_db.mark_investigate_started(user_id, request.request_id)
+    background_tasks.add_task(_run_investigation_background, user_id, request.request_id, request)
+    return {"status": "pending", "request_id": request.request_id}
+
+
+@router.get("/investigate/status")
+def investigate_status(user_id: str = Query(...), request_id: str = Query(...)):
+    """Poll the result of an async investigation triggered via POST /investigate with
+    a `request_id`. Returns `{"status": "pending"}` while still running, or the full
+    investigation response (with `status` added) once `completed`/`error`. Deletes the
+    job row once delivered as `completed` or `error` -- a one-shot investigation has
+    no reason to keep a row around after the poller has seen the result, unlike the
+    scan cache (which intentionally keeps serving its last good result)."""
+    job = alerts_db.get_investigate_job(user_id, request_id)
+    if not job:
+        return {"status": "pending"}
+    if job["status"] == "pending":
+        return {"status": "pending"}
+    if job["status"] == "error":
+        alerts_db.delete_investigate_job(user_id, request_id)
+        return {
+            "status": "error",
+            "error": job["error_message"],
+            "answer": None,
+            "trace": [],
+        }
+    alerts_db.delete_investigate_job(user_id, request_id)
+    return {**job["result"], "status": "completed"}
 
 
 @router.get("/investigate/history")
