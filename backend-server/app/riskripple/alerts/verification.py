@@ -21,6 +21,7 @@ import json
 import os
 
 from app.riskripple.alerts.relevance import RelevanceMatch
+from app.riskripple.tools.research_tools import is_routine_administrative_notice
 
 BEDROCK_MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 BEDROCK_REGION = os.environ.get("BEDROCK_REGION", os.environ.get("AWS_REGION", "us-east-1"))
@@ -41,20 +42,41 @@ this document and this holding, using ONLY the evidence given. Never invent a fa
 source, company name, or mechanism that is not present in the input -- if the
 evidence does not name anything specific beyond the generic shared word, say so.
 
+CRITICAL: naming a specific act, program, or agency is NOT by itself sufficient.
+"Named something specific" means the evidence states a concrete reason THIS
+holding's actual business, products, operations, revenue, or legal exposure would be
+affected -- not merely that the holding is "a company" or "a large employer" subject
+to some general regulatory or administrative framework. A routine administrative
+notice (information collection, paperwork renewal, comment request, claims-processing
+procedure) that does not itself describe any company-specific impact is coincidental
+overlap, not evidence, even though it names a real act or program by title.
+
 Respond with exactly one JSON object and nothing else:
-{"classification": "...", "reasoning": "..."}
+{"classification": "...", "mechanism": "...", "reasoning": "..."}
 
 classification must be exactly one of:
 - "evidence_supported_hypothesis": the evidence given (not your own general
-  knowledge) names something specific -- a real supplier, material, named act, or
-  company -- that plausibly connects this holding to this document, beyond the bare
-  generic word.
+  knowledge) states a concrete reason this SPECIFIC holding's business, products,
+  operations, revenue, or legal exposure would plausibly be affected -- a real
+  supplier/material/competitor relationship, a named act whose substance (not just
+  its title) applies to this holding's actual operations, or an explicit company-
+  specific impact.
 - "unverified_possibility": a connection is plausible in principle, but the evidence
-  given does not establish anything specific -- only the shared generic word.
+  given does not establish a concrete, holding-specific reason -- only the shared
+  generic word or an administrative/procedural overlap.
 - "dismissed_insufficient_evidence": the only real connection is coincidental shared
-  use of a generic word; no real mechanism is evident even as a hypothesis.
-Do not choose "evidence_supported_hypothesis" merely because the general topic
-sounds related -- only when the evidence given names something specific."""
+  use of a generic word or administrative category; no real mechanism is evident
+  even as a hypothesis.
+Do not choose "evidence_supported_hypothesis" merely because a named act/program/
+agency appears, or because the holding is a large company that could in principle be
+subject to it -- only when the evidence states a concrete, holding-specific impact.
+
+`mechanism` is a short (<=20 word) plain-language statement of the specific,
+holding-specific transmission channel (e.g. "named supplier TSMC manufactures the
+holding's chips" or "10-K discloses direct operational exposure to this export
+control"), or an empty string if classification is not evidence_supported_hypothesis.
+A classification of evidence_supported_hypothesis with an empty mechanism is invalid
+-- always state the mechanism when choosing that classification."""
 
 # A news article directly naming a held company is NOT automatically a flaggable
 # event the way a regulatory document naming a company is -- a government filing
@@ -194,12 +216,16 @@ def _classify_direct_news(client, *, document_title: str, document_text: str, sy
         }
 
 
-def _heuristic_classification(match: RelevanceMatch) -> str | None:
+def _heuristic_classification(match: RelevanceMatch) -> dict | None:
     """Deterministic, free check: does the filing's own evidence snippet ALSO name a
     real, specific entity (a known supplier or a known company name) beyond the bare
     generic term that triggered the match? If so, that is already real, stronger
     evidence -- skip the Bedrock call entirely rather than pay for an LLM opinion
-    when a literal fact is already available.
+    when a literal fact is already available. Returns a dict with a real, specific
+    `mechanism` string (never empty) so this path satisfies the same structured-
+    evidence gate as the LLM path -- see `pipeline._ALERT_WORTHY_CLASSIFICATIONS`
+    usage, which now requires a non-empty `mechanism` to confirm, not classification
+    label alone.
     """
     from app.riskripple.graph.company_graph import KNOWN_SUPPLIER_ALIASES
     from app.riskripple.tools.exposure_tools import KNOWN_COMPANY_NAMES
@@ -211,7 +237,11 @@ def _heuristic_classification(match: RelevanceMatch) -> str | None:
         specific_names.extend(alias_list)
     for name in specific_names:
         if name.lower() != matched_lower and name.lower() in text:
-            return "evidence_supported_hypothesis"
+            return {
+                "classification": "evidence_supported_hypothesis",
+                "mechanism": f"Filing evidence names known entity '{name}' alongside '{match.matched_entity}'.",
+                "reasoning": "A specific named entity co-occurs with the generic term in the filing evidence (deterministic check, no model call).",
+            }
     return None
 
 
@@ -224,35 +254,85 @@ def classify_match(
     document_source: str = "regulatory",
     document_text: str | None = None,
 ) -> dict:
-    """Returns {"classification": ..., "reasoning": ...}. `client` is a
-    `boto3.client("bedrock-runtime", ...)`, only ever invoked for a match flagged
-    `needs_verification=True` that also fails the free heuristic check below, or for
-    a "direct" match on a `document_source="news"` document (see
+    """Returns {"classification": ..., "mechanism": ..., "reasoning": ...}. `client`
+    is a `boto3.client("bedrock-runtime", ...)`, only ever invoked for a match
+    flagged `needs_verification=True` that also fails the free heuristic check below,
+    or for a "direct" match on a `document_source="news"` document (see
     `_classify_direct_news`).
+
+    `mechanism` is the structured evidence field the confirmation gate in
+    `alerts.pipeline.run_alert_scan` actually checks -- a classification label alone
+    is never sufficient to confirm an alert for a non-direct-news match; a non-empty,
+    specific `mechanism` must also be present. This is deliberately a structured
+    field produced by the verifier itself, not a phrase-match over generated
+    recommendation prose, which a caller could trivially work around by rewording.
 
     `document_source` distinguishes a regulatory/government filing (where a document
     directly naming a company is itself inherently significant -- these don't
     namedrop companies incidentally) from a news article (where a direct mention is
-    routine and needs its own materiality judgment, not an automatic pass).
+    routine and needs its own materiality judgment, not an automatic pass). A
+    *routine* regulatory notice (see `is_routine_administrative_notice`) is the
+    exception: these recur verbatim across thousands of unrelated administrative
+    filings, so even a direct mention there doesn't get an automatic pass -- it still
+    needs the mechanism check.
     """
     if match.relationship == "direct":
         if document_source == "news":
             return _classify_direct_news(
                 client, document_title=document_title, document_text=document_text or "", symbol=match.symbol
             )
-        return {"classification": "verified_fact", "reasoning": "The document directly names this holding."}
+        if not is_routine_administrative_notice(document_title):
+            return {
+                "classification": "verified_fact",
+                "mechanism": "Document directly names this holding.",
+                "reasoning": "The document directly names this holding.",
+            }
+        # A routine administrative notice directly naming a company (e.g. as one of
+        # many entities in a generic compliance list) isn't inherently significant
+        # the way a sanctions order or enforcement action naming a company is --
+        # falls through to the shared routine-notice check below, deliberately NOT
+        # the `needs_verification` fast path further down (a "direct" match always
+        # has needs_verification=False by construction, so it would otherwise hit
+        # that fast path and silently undo this downgrade -- confirmed as a real bug
+        # during this fix's own verification before the check order was corrected).
+
+    # Checked BEFORE the `needs_verification` fast path below, deliberately --
+    # Stage-1's "is this candidate specific" judgment (relevance.RelevanceMatch.
+    # needs_verification) is itself just a closed word-list check at extraction time
+    # (research_tools._is_generic_procedural_phrase / is_generic_category_term) that
+    # can only catch a phrase a human already anticipated. The document-level
+    # routine-notice check is an orthogonal, independent signal -- it doesn't depend
+    # on recognizing any particular candidate phrase, so it still catches the NEXT
+    # never-before-seen bureaucratic phrase from this exact document family even if
+    # Stage-1 wrongly calls it "specific." Letting `needs_verification=False` skip
+    # this check first was the exact gap that let "Compensation Programs" through
+    # originally.
+    if is_routine_administrative_notice(document_title):
+        heuristic = _heuristic_classification(match)
+        if heuristic:
+            return heuristic
+        # Never worth a Bedrock call -- confirmed live, this exact boilerplate family
+        # repeats verbatim across thousands of unrelated notices and has no
+        # company-specific content by construction. Kept as an investigation
+        # candidate (not confirmed, not dropped) rather than dismissed outright, in
+        # case a future notice in this family genuinely does name a holding-specific
+        # detail worth a human glance.
+        return {
+            "classification": "unverified_possibility",
+            "mechanism": "",
+            "reasoning": "Routine Federal Register/OMB administrative notice (information collection, paperwork renewal, comment request) -- this boilerplate family recurs across unrelated filings regardless of holding, with no company-specific content.",
+        }
+
     if not match.needs_verification:
         return {
             "classification": "evidence_supported_hypothesis",
+            "mechanism": f"Literal match on specific term '{match.matched_entity}' (known material/supplier/entity, not a generic category word).",
             "reasoning": f"Literal match on a specific term ('{match.matched_entity}'), not a generic category word.",
         }
 
     heuristic = _heuristic_classification(match)
     if heuristic:
-        return {
-            "classification": heuristic,
-            "reasoning": "A specific named entity co-occurs with the generic term in the filing evidence (deterministic check, no model call).",
-        }
+        return heuristic
 
     user_text = (
         f"Document title: {document_title}\n"
@@ -274,16 +354,24 @@ def classify_match(
             raw = raw[4:].strip()
         parsed = json.loads(raw)
         classification = parsed.get("classification")
+        mechanism = (parsed.get("mechanism") or "").strip()
         if classification not in VALID_CLASSIFICATIONS or classification == "verified_fact":
             # The model has no basis to claim "direct/verified" from a generic-term
             # match alone -- fail closed to the weaker label rather than trust an
             # out-of-contract response.
             classification = "unverified_possibility"
-        return {"classification": classification, "reasoning": parsed.get("reasoning", "")}
+        if classification == "evidence_supported_hypothesis" and not mechanism:
+            # Contract violation: the prompt requires a mechanism whenever this
+            # classification is chosen. Fail closed rather than let an empty-
+            # mechanism "evidence_supported_hypothesis" slip through the gate on
+            # classification label alone.
+            classification = "unverified_possibility"
+        return {"classification": classification, "mechanism": mechanism, "reasoning": parsed.get("reasoning", "")}
     except Exception as exc:
         # Fail closed: a failed/unparseable verification call must never silently
         # become a confirmed alert -- treat as unverified, not confirmed or dismissed.
         return {
             "classification": "unverified_possibility",
+            "mechanism": "",
             "reasoning": f"Verification call failed ({type(exc).__name__}); treated as unverified rather than fabricating a decision.",
         }

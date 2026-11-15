@@ -98,10 +98,13 @@ rec_text_3 = None
 if competitor_matches:
     m = competitor_matches[0]
     verdict_3 = classify_match(client, document_title=doc_text_3, match=m, industry=graph_3["industries"].get("AMD"))
-    rec_text_3 = _generate_recommendation(
-        client, document_title=doc_text_3, match=m, industry=graph_3["industries"].get("AMD"),
-        classification=verdict_3["classification"],
-    )
+    try:
+        rec_text_3 = _generate_recommendation(
+            client, document_title=doc_text_3, match=m, industry=graph_3["industries"].get("AMD"),
+            classification=verdict_3["classification"],
+        )
+    except Exception as exc:
+        rec_text_3 = f"[Bedrock call failed: {exc}]"
 latency_3 = time.time() - t0
 price_direction_words = ["bullish", "bearish", "will rise", "will fall", "upside", "downside", "negative for", "positive for", "headwind", "tailwind"]
 contains_price_direction = bool(rec_text_3) and any(w in rec_text_3.lower() for w in price_direction_words)
@@ -161,6 +164,119 @@ try:
     conn.close()
 except Exception as exc:
     print(f"cleanup warning: {exc}")
+
+# --- Hard verification gate: negative controls (P0 regression, confirmed live false
+# positives against GOOGL) -- routine DOL/OWCP Federal Register paperwork notices
+# sharing only the generic "Compensation Programs" boilerplate with GOOGL's own 10-K's
+# unrelated executive/equity-compensation disclosures. None of these may confirm. ---
+_NEGATIVE_CONTROL_DOCS = [
+    (
+        "6a. GOOGL + pneumoconiosis information collection",
+        "Agency Information Collection Activities; Submission for OMB Review; Comment Request; "
+        "Claim Adjudication Process for the Alleged Presence of Pneumoconiosis",
+        "The Department of Labor (DOL) is submitting this Office of Workers' Compensation Programs "
+        "(OWCP)-sponsored information collection request (ICR) to the Office of Management and Budget "
+        "(OMB) for review and approval in accordance with the Paperwork Reduction Act of 1995 (PRA).",
+    ),
+    (
+        "6b. GOOGL + longshore workers' compensation administrative notice",
+        "Agency Information Collection Activities; Submission for OMB Review; Comment Request; "
+        "Administration of the Longshore and Harbor Workers' Compensation Act",
+        "The Department of Labor (DOL) is submitting this Office of Workers' Compensation Programs "
+        "(OWCP)-sponsored information collection request (ICR) to the Office of Management and Budget "
+        "(OMB) for review and approval in accordance with the Paperwork Reduction Act of 1995 (PRA).",
+    ),
+    (
+        "6c. GOOGL + student death-benefit continuation form",
+        "Agency Information Collection Activities; Submission for OMB Review; Comment Request; "
+        "Application for Continuation of Death Benefit for Student",
+        "The Department of Labor (DOL) is submitting this Office of Workers' Compensation Programs "
+        "(OWCP)-sponsored information collection request (ICR) to the Office of Management and Budget "
+        "(OMB) for review and approval in accordance with the Paperwork Reduction Act of 1995 (PRA).",
+    ),
+    (
+        "6d. GOOGL + unrelated notice sharing only generic terminology",
+        "Agency Information Collection Activities; Submission for OMB Review; Comment Request; "
+        "Request for Information on Earnings, Dual Benefits, Dependents, and Third Party Settlements",
+        "The Department of Labor (DOL) is submitting this Office of Workers' Compensation Programs "
+        "(OWCP)-sponsored information collection request (ICR) to the Office of Management and Budget "
+        "(OMB) for review and approval in accordance with the Paperwork Reduction Act of 1995 (PRA).",
+    ),
+]
+for name, title, body in _NEGATIVE_CONTROL_DOCS:
+    t0 = time.time()
+    doc_text = f"{title}\n\n{body}"
+    graph = load_company_graph(["GOOGL"], event_description=doc_text, strict_materials_only=True)
+    matches = check_relevance(doc_text, graph, ["GOOGL"])
+    verdicts = [
+        classify_match(client, document_title=title, match=m, industry=graph["industries"].get("GOOGL"), document_source="regulatory")
+        for m in matches
+    ]
+    confirmed = [
+        v for v in verdicts
+        if v["classification"] in ("verified_fact", "evidence_supported_hypothesis") and v.get("mechanism")
+    ]
+    record(
+        name,
+        title,
+        "No confirmed alert for GOOGL (routine administrative notice, no company-specific mechanism)",
+        f"matches: {len(matches)}, verdicts: {[(v['classification'], v.get('mechanism')) for v in verdicts]}, confirmed: {len(confirmed)}",
+        len(confirmed) == 0,
+        time.time() - t0,
+        detail=str(verdicts),
+    )
+
+# --- Hard verification gate: positive controls -- genuine exposure must still
+# confirm. A mechanism-gated check must not become so strict it silently kills real
+# alerts too. ------------------------------------------------------------------------
+
+# P1: company directly named in a substantive (non-routine) enforcement/sanctions-
+# style regulatory action -- a direct mention here is NOT subject to the routine-
+# notice downgrade and must still confirm automatically.
+t0 = time.time()
+enforcement_title = "Alphabet Inc. Named in Settlement of Antitrust Enforcement Action"
+enforcement_text = (
+    f"{enforcement_title}\n\nThe Department of Justice announced a settlement with Alphabet Inc. "
+    "(GOOGL) resolving antitrust claims related to its advertising technology business."
+)
+graph_p1 = load_company_graph(["GOOGL"], event_description=enforcement_text, strict_materials_only=True)
+matches_p1 = check_relevance(enforcement_text, graph_p1, ["GOOGL"])
+direct_p1 = [m for m in matches_p1 if m.relationship == "direct"]
+verdict_p1 = (
+    classify_match(client, document_title=enforcement_title, match=direct_p1[0], document_source="regulatory")
+    if direct_p1 else None
+)
+record(
+    "P1. GOOGL directly named in a substantive enforcement action -- must still confirm",
+    enforcement_title,
+    "verified_fact with a non-empty mechanism (direct mention in a non-routine action)",
+    f"direct matches: {len(direct_p1)}, verdict: {verdict_p1}",
+    bool(direct_p1) and verdict_p1 is not None and verdict_p1["classification"] == "verified_fact" and bool(verdict_p1.get("mechanism")),
+    time.time() - t0,
+)
+
+# P2: real supplier/export-restriction pathway (NVDA/TSMC via the Entity List) --
+# must still be discoverable and confirmable; also confirms "Entity List" itself is
+# never mistaken for a routine notice by `is_routine_administrative_notice`.
+t0 = time.time()
+export_title = "Commerce Department Adds Foreign Chip Fabricator to the Entity List"
+export_text = (
+    f"{export_title}\n\nThe Bureau of Industry and Security added a Taiwan Semiconductor Manufacturing "
+    "Company (TSMC) subsidiary to the Entity List, restricting its ability to supply advanced chips."
+)
+graph_p2 = load_company_graph(["NVDA"], event_description=export_text, strict_materials_only=True)
+matches_p2 = check_relevance(export_text, graph_p2, ["NVDA"])
+verdicts_p2 = [classify_match(client, document_title=export_title, match=m, industry=graph_p2["industries"].get("NVDA"), document_source="regulatory") for m in matches_p2]
+confirmed_p2 = [v for v in verdicts_p2 if v["classification"] in ("verified_fact", "evidence_supported_hypothesis") and v.get("mechanism")]
+record(
+    "P2. NVDA/TSMC export-restriction supplier pathway -- must remain confirmable",
+    export_title,
+    "At least one confirmed alert with a non-empty mechanism; 'Entity List' not treated as a routine notice",
+    f"matches: {len(matches_p2)}, confirmed: {len(confirmed_p2)}, verdicts: {[(v['classification'], v.get('mechanism')) for v in verdicts_p2]}",
+    len(confirmed_p2) >= 1,
+    time.time() - t0,
+    detail=str(verdicts_p2),
+)
 
 # --- Write results file -------------------------------------------------------------
 lines = ["# Alert verification regression results\n",

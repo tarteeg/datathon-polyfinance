@@ -96,7 +96,12 @@ CREATE TABLE IF NOT EXISTS riskripple_scan_cache (
 # the current response shape" and treat it as stale regardless of its age, without
 # needing to disable caching for genuinely current rows. Bump this whenever the
 # scan response shape or the logic that decides confirmed/candidate changes.
-CURRENT_SCAN_SCHEMA_VERSION = 2  # bumped: regulatory scans now also produce articles/investigation_candidates/confirmed_alerts
+# Bumped again (2026-11-15): the confirmation gate itself changed (hard
+# verification gate requiring a structured `mechanism` field, routine-administrative-
+# notice downgrade) -- a cache row written before this fix could still show false
+# "confirmed" alerts (e.g. the GOOGL/OWCP "Compensation Programs" false positives)
+# as fresh for up to the 10-minute freshness window otherwise.
+CURRENT_SCAN_SCHEMA_VERSION = 3
 
 
 def ensure_scan_cache_table() -> None:
