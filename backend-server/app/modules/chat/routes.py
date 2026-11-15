@@ -60,6 +60,23 @@ def bedrock():
     return boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION"))
 
 
+def guardrail_config(streaming: bool) -> dict:
+    """Bedrock Guardrails settings from the environment. Empty when no guardrail is configured."""
+    guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
+    if not guardrail_id:
+        return {}
+    config = {"guardrailIdentifier": guardrail_id, "guardrailVersion": os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")}
+    if streaming:
+        # "sync" checks each chunk before it is sent, so blocked text never reaches the user.
+        config["streamProcessingMode"] = "sync"
+    return {"guardrailConfig": config}
+
+
+def blocked_answer(message: str) -> str:
+    """Wrap the guardrail's refusal in the expression the dashboard renders."""
+    return f"root = FinanceAnswer({json.dumps('Demande non traitée', ensure_ascii=False)}, {json.dumps(message, ensure_ascii=False)}, [], [], [])"
+
+
 def require_dashboard(x_chat_key: str):
     key = os.getenv("CHAT_API_KEY")
     if not key or not secrets.compare_digest(x_chat_key.encode(), key.encode()):
@@ -87,7 +104,16 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         question += "\n\nPrevious stock lookup (historical reference): " + json.dumps(request.previous_stock)
     if request.previous_news:
         question += "\n\nPreviously cited sources in numbered order (reference data): " + json.dumps(request.previous_news)
-    messages.append({"role": "user", "content": [{"text": question}]})
+    if guardrail_config(streaming):
+        # Only the user's own words are checked on input. Saved chart data, headlines and tool
+        # results stay outside guardContent so they cannot trigger or be altered by the guardrail.
+        content = [{"guardContent": {"text": {"text": request.question}}}]
+        context = question[len(request.question):].strip()
+        if context:
+            content.append({"text": context})
+        messages.append({"role": "user", "content": content})
+    else:
+        messages.append({"role": "user", "content": [{"text": question}]})
     system = [{"text": (
         "You are the AlphaForge finance education assistant. Reply in the user's language. "
         "Explain concepts and hypothetical examples. Use supplied chart facts or saved headlines when present. Use StocksFeed for current coverage. For chart explanations give the date range, price move and largest adjacent candle move if available. Use the supplied baseline and timestamps. Avoid inferring causes from prices or headlines. "
@@ -281,10 +307,15 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
 
 
 def model_events(args, options, streaming):
+    args = {**args, **guardrail_config(streaming)}
     if not streaming:
         result = bedrock().converse(**args, **options)
         blocks = result["output"]["message"]["content"]
         text = "".join(block.get("text", "") for block in blocks)
+        if result.get("stopReason") == "guardrail_intervened":
+            text = blocked_answer(text)
+            yield {"delta": text}
+            return text, []
         calls = [block["toolUse"] for block in blocks if "toolUse" in block]
         if text and not calls:
             start = re.search(r"^[ \t]*root\s*=\s*FinanceAnswer\(", text, re.MULTILINE)
@@ -325,6 +356,11 @@ def model_events(args, options, streaming):
                 raise HTTPException(502, "Bedrock interrupted the stream.")
     finally:
         stream.close()
+    if stop == "guardrail_intervened":
+        # In sync mode nothing was emitted, and `text` holds the guardrail's configured message.
+        text = blocked_answer(text)
+        yield {"delta": text}
+        return text, []
     if stop not in ("tool_use", "end_turn", "stop_sequence"):
         raise HTTPException(502, "Bedrock did not finish the answer.")
     if not calls and not emitted:
