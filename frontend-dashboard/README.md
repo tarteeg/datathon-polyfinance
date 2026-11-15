@@ -5,11 +5,12 @@ I forked [Studio Admin](https://github.com/arhamkhnz/next-shadcn-admin-dashboard
 - Sign up or sign in with your email and password. Each account has its own portfolio.
 - Search for an S&P 500 stock and add it to your portfolio. You can leave the number of shares blank or edit it later on Home.
 - Open a stock to see its current price, change the period on its price chart, and read related news.
+- Open **Portfolio News** in the sidebar to browse coverage for your holdings or switch to all symbols.
 - On Home, use the Discover table to see which stocks appear most often in the news. It counts distinct articles from the past 24 hours, and you can filter by company sector.
 - Open Finance chat in the sidebar for general finance Q&A. Expand Finance chat in the sidebar to start a chat or search saved threads grouped by date. Each thread has a link you can reopen.
 - Click your name in the sidebar or the settings button in the header to change your name, password, or dashboard preferences.
 
-The Studio Admin example dashboards and pages (CRM, Finance, Analytics, Kanban, Mail and others) have been removed. Only `home`, `chat` and `stock/[ticker]` remain under `src/app/(main)/dashboard/`.
+The Studio Admin example dashboards and pages (CRM, Finance, Analytics, Kanban, Mail and others) have been removed.
 
 See [how the dashboard, API, and database work together](../ARCHITECTURE.md).
 

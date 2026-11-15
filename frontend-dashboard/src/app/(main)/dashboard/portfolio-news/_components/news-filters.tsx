@@ -9,8 +9,7 @@ export function NewsFilters({ all, ticker, saved }: { all: boolean; ticker: stri
   const [scope, setScope] = useState(all ? "all" : "portfolio");
   const [symbol, setSymbol] = useState(ticker);
   return (
-    <form action="/dashboard/home" className="flex flex-wrap items-center gap-2">
-      <input type="hidden" name="tab" value="news" />
+    <form action="/dashboard/portfolio-news" className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="symbol" value={symbol} />
       <NativeSelect
         name="scope"
