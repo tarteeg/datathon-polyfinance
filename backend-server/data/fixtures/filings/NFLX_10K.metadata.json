@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001065280-26-000034)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528026000034/nflx-20251231.htm",
+  "retrieved_at": "2026-11-15T16:10:46.812613Z",
+  "observation_date": null,
+  "publication_date": "2026-01-23",
+  "currency": null,
+  "data_version": "439f31b691caeed1",
+  "content_hash": "439f31b691caeed1d35360d5c9d84756b74f42657a79ca62b27b3bc004fea40c",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Services-Video Tape Rental",
+  "company_name": "NETFLIX INC",
+  "fetched_live": true
+}

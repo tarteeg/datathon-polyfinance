@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001744489-25-000155)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1744489/000174448925000155/dis-20250927.htm",
+  "retrieved_at": "2026-11-15T16:10:44.595214Z",
+  "observation_date": null,
+  "publication_date": "2025-11-13",
+  "currency": null,
+  "data_version": "4e2451d017d654ee",
+  "content_hash": "4e2451d017d654ee78e27c84fffcea03af27f994bba109fef9754f5dc510be41",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Services-Miscellaneous Amusement & Recreation",
+  "company_name": "Walt Disney Co",
+  "fetched_live": true
+}
