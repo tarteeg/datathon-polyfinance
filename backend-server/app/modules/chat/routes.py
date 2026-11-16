@@ -21,6 +21,7 @@ from app.modules.analysis.tools import ACTIVITY_INPUTS, ANALYSIS_TOOL_NAMES, ANA
 from app.modules.verification.ledger import EvidenceLedger
 from app.modules.verification.step import verification_activity, verification_started
 
+from app.riskripple.personas.profiles import PersonaId, persona_guidance
 from app.modules.decision_lab.schemas import LabRequest
 from app.modules.decision_lab.service import analyze as analyze_breakpoint
 
@@ -39,6 +40,7 @@ class Exchange(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    persona: PersonaId | None = None
     question: str = Field(min_length=1, max_length=4000)
     holdings: list[Holding] | None = None
     previous_stock: dict | None = None
@@ -183,6 +185,8 @@ def reply_events(request: ChatRequest, model: str, streaming: bool):
         "a single-candle move. Only discuss the biggest candle move when explicitly provided."
 
     )}]
+    if request.persona and not request.decision_lab:
+        system.append({"text": persona_guidance(request.persona)})
     if request.decision_lab:
         system.append({"text": (
             "Explain the attached fictional BreakPoint scenario using only the figures returned by analyze_breakpoint. "

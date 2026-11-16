@@ -1,5 +1,6 @@
 import "server-only";
 import type { ChartSnapshot } from "@/app/(main)/dashboard/chat/chart-snapshot";
+import { requireSession } from "@/lib/session";
 import { authPool } from "@/lib/db";
 
 export async function modelReply(
@@ -9,11 +10,13 @@ export async function modelReply(
   previousNews?: unknown,
   previousStock?: unknown,
 ) {
+  const { user } = await requireSession();
   const url = new URL("/chat", process.env.BACKEND_API_URL || "http://127.0.0.1:8000");
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Chat-Key": process.env.CHAT_API_KEY ?? "" },
     body: JSON.stringify({
+      persona: user.investorPersona,
       question,
       history,
       chart: snapshot?.facts,

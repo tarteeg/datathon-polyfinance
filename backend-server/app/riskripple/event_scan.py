@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.integrations.stocksfeed.service import fetch_article_by_url, fetch_recent_events
 from app.modules.chat.routes import bedrock
+from app.riskripple.personas.profiles import PersonaId, persona_guidance
 from app.riskripple.finance.live_portfolio import fetch_current_prices
 from app.riskripple.rag.chunking import chunk_document
 from app.riskripple.rag.retrieval import LocalLexicalRetriever
@@ -145,7 +146,42 @@ def verified_findings(response, sources, names):
     return accepted
 
 
-def scan(holdings, model):
+class InvestorNote(BaseModel):
+    event_id: str
+    ticker: str
+    interpretation: str = Field(min_length=10, max_length=550)
+    question: str = Field(min_length=10, max_length=400)
+
+
+class InvestorReview(BaseModel):
+    notes: list[InvestorNote] = Field(max_length=5)
+
+
+def add_investor_notes(events, model, persona):
+    # Only already-verified holdings reach this pass. It cannot add a finding or change the order.
+    cases = []
+    supported = {}
+    for event in events:
+        linked = [holding for holding in event["holdings"] if holding["status"] == "supported"]
+        supported[event["id"]] = {holding["ticker"] for holding in linked}
+        cases.append({"event_id": event["id"], "headline": event["title"], "holdings": linked})
+    prompt = (
+        persona_guidance(persona) +
+        " For each event explain in one sentence why a verified exposure matters to this investor, "
+        "then ask one concrete follow-up question. Anchor both in a supplied holding's business mechanism, "
+        "position size if known, and a specific disclosure or uncertainty. Use only supplied event IDs "
+        "and tickers. Introduce no new factual claims."
+    )
+    review = ask(model, InvestorReview, prompt, {"events": cases})
+    notes = {n.event_id: n for n in review.notes if n.ticker in supported.get(n.event_id, {})}
+    for event in events:
+        note = notes.get(event["id"])
+        if note:
+            event["investor_note"] = note.model_dump(exclude={"event_id"})
+    return len(notes) == len(events)
+
+
+def scan(holdings, model, persona: PersonaId | None = None):
     feed = fetch_recent_events()
     events = feed["events"]
     catalog = {c["ticker"]: c for c in feed["companies"]}
@@ -300,5 +336,14 @@ def scan(holdings, model):
     result["events"] = [e for _, e in sorted(ranked, key=lambda pair: pair[0], reverse=True)[:5]]
     if any(index is None for index in indexes.values()):
         warnings.add("Issuer filings were unavailable for some companies. Indirect coverage is incomplete.")
+    if persona:
+        result["persona"] = persona.value
+        if result["events"]:
+            try:
+                if not add_investor_notes(result["events"], model, persona):
+                    warnings.add("Some investor-specific interpretations were unavailable.")
+            except Exception:
+                logger.exception("Investor-specific review failed")
+                warnings.add("The investor-specific review was unavailable.")
     result["warnings"] = sorted(warnings)
     return result

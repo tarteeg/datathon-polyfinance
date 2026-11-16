@@ -30,6 +30,7 @@ from app.riskripple.finance.returns import align_price_panel, daily_returns, ret
 from app.riskripple.finance.risk import correlation_matrix, max_drawdown
 from app.riskripple.finance.stress import TIER_SHOCKS, build_tier_shock_scenario, run_stress_test
 from app.riskripple.ingestion import macro_fred, news_stocksfeed, regulatory_events, sanctions_gac, sanctions_ofac
+from app.riskripple.personas.profiles import PersonaId, persona_guidance
 from app.riskripple.personas.assessment import compare_personas
 from app.riskripple.tools.research_tools import extract_candidate_entities
 
@@ -131,6 +132,7 @@ def get_macro_series(series_id: str):
 
 
 class InvestigateRequest(BaseModel):
+    persona: PersonaId | None = None
     event_description: str
     portfolio_holdings: list[str]
     # Optional real share quantities (symbol -> shares). When given, portfolio_impact
@@ -451,6 +453,9 @@ def _run_investigation(request: InvestigateRequest) -> dict:
         "event, per your instructions. Do not assume any holding is or isn't relevant "
         "before checking."
     )
+    if request.persona:
+        prompt += ("\nAfter reporting the common findings, finish with a short interpretation and one "
+                   "evidence-grounded follow-up for the selected investor. " + persona_guidance(request.persona))
 
     # Hard wall-clock ceiling on the raw agent call. Confirmed live: with no cap here,
     # a stalled Bedrock/Strands streaming call can hang indefinitely with zero further
@@ -635,6 +640,7 @@ class AlertScanDocument(BaseModel):
 
 
 class AlertScanRequest(BaseModel):
+    persona: PersonaId | None = None
     documents: list[AlertScanDocument] | None = None
     search_term: str | None = None
     per_page: int = 10
@@ -645,6 +651,10 @@ class AlertScanRequest(BaseModel):
     # so a scoped scan's dedup state doesn't collide with another real user's.
     portfolio_holdings: list[str] | None = None
     user_id: str | None = None
+
+
+def _alert_cache_key(owner: str | None, persona: PersonaId | None) -> str | None:
+    return f"{owner}:{persona.value}" if owner and persona else owner
 
 
 def _resolve_portfolios(portfolio_holdings: list[str] | None, user_id: str | None) -> dict[str, list[str]]:
@@ -684,7 +694,7 @@ def _perform_regulatory_scan(request: "AlertScanRequest", portfolios: dict[str, 
     for d in documents:
         d.setdefault("source", "regulatory")
 
-    alerts = run_alert_scan(documents=documents, portfolios=portfolios)
+    alerts = run_alert_scan(documents=documents, portfolios=portfolios, persona=request.persona)
 
     # Tier 1: every real regulatory document scanned, regardless of confirmation --
     # built directly from the fetched documents, same discipline as the news path's
@@ -771,6 +781,7 @@ def alerts_scan(request: AlertScanRequest, background_tasks: BackgroundTasks):
     cache_key = request.user_id or (
         ",".join(sorted(request.portfolio_holdings)) if request.portfolio_holdings else None
     )
+    cache_key = _alert_cache_key(cache_key, request.persona)
     if not cache_key:
         result = _perform_regulatory_scan(request, portfolios)
         return {**result, "status": "idle", "last_success_at": None, "error_message": None}
@@ -790,12 +801,13 @@ def alerts_scan(request: AlertScanRequest, background_tasks: BackgroundTasks):
 
 
 @router.get("/alerts/scan/status")
-def alerts_scan_status(user_id: str = Query(...)):
+def alerts_scan_status(user_id: str = Query(...), persona: PersonaId | None = None):
     """Read-only poll of the current cached regulatory-scan state for `user_id`."""
-    return _cached_regulatory_response(user_id, status_if_missing="idle")
+    return _cached_regulatory_response(_alert_cache_key(user_id, persona), status_if_missing="idle")
 
 
 class AlertScanNewsRequest(BaseModel):
+    persona: PersonaId | None = None
     # Raised from 5: confirmed live that 5 hid most of a ticker's real coverage
     # (e.g. the entire NVIDIA CEO-departure story). 10 is a deliberate middle ground,
     # not the max tested -- confirmed live that 20/ticker across 3 tickers pushed a
@@ -831,7 +843,7 @@ _EMPTY_NEWS_SCAN_SHAPE = {
 _NEWS_SCAN_FRESHNESS_MINUTES = 10
 
 
-def _perform_news_scan(portfolios: dict[str, list[str]], limit_per_ticker: int) -> dict:
+def _perform_news_scan(portfolios: dict[str, list[str]], limit_per_ticker: int, persona: PersonaId | None = None) -> dict:
     """The actual, expensive scan work -- real StocksFeed fetch + real Stage-2
     Bedrock verification across every genuine candidate. Pulled out of the route
     handler so it can be run either synchronously (no user_id to cache against -- the
@@ -867,7 +879,7 @@ def _perform_news_scan(portfolios: dict[str, list[str]], limit_per_ticker: int) 
         for doc in documents
     ]
 
-    alerts = run_alert_scan(documents=documents, portfolios=portfolios, strict_materials_only=True)
+    alerts = run_alert_scan(documents=documents, portfolios=portfolios, strict_materials_only=True, persona=persona)
 
     investigation_candidates: list[dict] = []
     confirmed_alerts: list[dict] = []
@@ -893,9 +905,9 @@ def _perform_news_scan(portfolios: dict[str, list[str]], limit_per_ticker: int) 
     }
 
 
-def _run_news_scan_background(cache_key: str, portfolios: dict[str, list[str]], limit_per_ticker: int) -> None:
+def _run_news_scan_background(cache_key: str, portfolios: dict[str, list[str]], limit_per_ticker: int, persona: PersonaId | None = None) -> None:
     try:
-        result = _perform_news_scan(portfolios, limit_per_ticker)
+        result = _perform_news_scan(portfolios, limit_per_ticker, persona)
     except Exception as exc:
         alerts_db.save_scan_error(cache_key, "news", f"{type(exc).__name__}: {exc}")
         return
@@ -970,14 +982,15 @@ def alerts_scan_news(request: AlertScanNewsRequest, background_tasks: Background
     cache_key = request.user_id or (
         ",".join(sorted(request.portfolio_holdings)) if request.portfolio_holdings else None
     )
+    cache_key = _alert_cache_key(cache_key, request.persona)
     if not cache_key:
-        result = _perform_news_scan(portfolios, request.limit_per_ticker)
+        result = _perform_news_scan(portfolios, request.limit_per_ticker, request.persona)
         return {**result, "status": "idle", "last_success_at": None, "error_message": None}
 
     cached = alerts_db.get_cached_scan(cache_key, "news")
     if not cached or (cached["status"] != "scanning" and not _scan_is_fresh(cached)):
         alerts_db.mark_scan_started(cache_key, "news")
-        background_tasks.add_task(_run_news_scan_background, cache_key, portfolios, request.limit_per_ticker)
+        background_tasks.add_task(_run_news_scan_background, cache_key, portfolios, request.limit_per_ticker, request.persona)
         base = (cached.get("result") if cached else None) or _EMPTY_NEWS_SCAN_SHAPE
         return {
             **base, "status": "scanning",
@@ -989,7 +1002,7 @@ def alerts_scan_news(request: AlertScanNewsRequest, background_tasks: Background
 
 
 @router.get("/alerts/scan-news/status")
-def alerts_scan_news_status(user_id: str = Query(...)):
+def alerts_scan_news_status(user_id: str = Query(...), persona: PersonaId | None = None):
     """Read-only poll of the current cached news-scan state for `user_id` -- never
     triggers a new scan itself (that only happens from the POST endpoint above)."""
-    return _cached_news_response(user_id, status_if_missing="idle")
+    return _cached_news_response(_alert_cache_key(user_id, persona), status_if_missing="idle")

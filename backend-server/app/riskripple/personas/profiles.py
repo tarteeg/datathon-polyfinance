@@ -90,3 +90,17 @@ PERSONA_PROFILES: dict[PersonaId, PersonaConstraints] = {
         ),
     ),
 }
+
+
+def persona_guidance(persona: PersonaId | None) -> str:
+    if persona is None:
+        return ""
+    profile = PERSONA_PROFILES[persona]
+    focus = {
+        PersonaId.AMIRA: "Distinguish durable growth from short-term news. Check overlapping business exposures and diversification.",
+        PersonaId.MATEO: "Weigh stability against growth. Identify the specific environmental, social or governance evidence, or the disclosure still needed.",
+        PersonaId.ROBERT: "Explain downside, income reliability and recovery time in plain language. Put a widely publicized opportunity in the context of its position size.",
+    }[persona]
+    return (f"Fictional investor: {profile.display_name}. {profile.description} {focus} "
+            "Use these preferences only for interpretation and follow-up questions. Keep facts, evidence standards, "
+            "and calculations independent of the profile. Do not invent thresholds or recommend trades.")

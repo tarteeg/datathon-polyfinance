@@ -24,9 +24,9 @@ export type Impact = {
   published: string | null;
 };
 
-function threadId(owner: string, url: string, demo: boolean) {
+function threadId(owner: string, url: string, demo: boolean, persona?: string | null) {
   const key = createHash("sha256")
-    .update(JSON.stringify(["headline", owner, url, demo]))
+    .update(JSON.stringify(["headline", owner, url, demo, ...(persona ? [persona] : [])]))
     .digest("hex");
   return [key.slice(0, 8), key.slice(8, 12), "8" + key.slice(13, 16), "a" + key.slice(17, 20), key.slice(20, 32)].join(
     "-",
@@ -70,17 +70,17 @@ async function currentArticle(url: string) {
   };
 }
 
-async function lookup(owner: string, url: string, replay?: Replay, includeChemtrade = true): Promise<Impact> {
+async function lookup(owner: string, persona: string | null | undefined, url: string, replay?: Replay, includeChemtrade = true): Promise<Impact> {
   if (replay && url !== railHeadline.url) throw new Error("Unknown replay.");
   const [headline, holdings] = await Promise.all([
     replay ? { ...railHeadline, source_content_type: "missing" } : currentArticle(url),
     replay ? [] : getHoldings(),
   ]);
   const payload = JSON.stringify({
-    headline, replay, include_chemtrade: replay ? includeChemtrade : undefined,
+    headline, persona: persona || undefined, replay, include_chemtrade: replay ? includeChemtrade : undefined,
     holdings: holdings.map((h) => ({ ...h, name: sp500[h.ticker] ?? null })),
   });
-  const key = threadId(owner, url, Boolean(replay));
+  const key = threadId(owner, url, Boolean(replay), persona);
   const hash = createHash("sha256").update(String(analysisVersion)).update(payload).digest("hex");
   const db = await authPool.connect();
   try {
@@ -117,9 +117,9 @@ async function lookup(owner: string, url: string, replay?: Replay, includeChemtr
 
 export async function checkHeadline(url: string, replay?: Replay, includeChemtrade = true) {
   const { user } = await requireSession();
-  const id = threadId(user.id, url, Boolean(replay));
+  const id = threadId(user.id, url, Boolean(replay), user.investorPersona);
   const [result, saved] = await Promise.all([
-    lookup(user.id, url, replay, includeChemtrade),
+    lookup(user.id, user.investorPersona, url, replay, includeChemtrade),
     authPool.query("SELECT 1 FROM chat_turns WHERE user_id = $1 AND thread_id = $2 AND turn = 1", [user.id, id]),
   ]);
   return { result, saved: saved.rowCount ? id : null };
@@ -127,9 +127,9 @@ export async function checkHeadline(url: string, replay?: Replay, includeChemtra
 
 export async function followHeadline(url: string, replay?: Replay, includeChemtrade = true) {
   const { user } = await requireSession();
-  const result = await lookup(user.id, url, replay, includeChemtrade);
+  const result = await lookup(user.id, user.investorPersona, url, replay, includeChemtrade);
   if (!result.question) throw new Error("No supported connection to follow.");
-  const id = threadId(user.id, url, Boolean(replay));
+  const id = threadId(user.id, url, Boolean(replay), user.investorPersona);
   const evidence = [...result.links, ...(result.update ? [result.update] : [])];
   const details = [
     replay ? "Historical replay · fictional CA$50,000 portfolio." : "Your portfolio when you followed this story.",

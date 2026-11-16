@@ -23,6 +23,7 @@ import os
 
 import boto3
 
+from app.riskripple.personas.profiles import PersonaId, persona_guidance
 from app.riskripple.alerts import db as alerts_db
 from app.riskripple.alerts.relevance import RelevanceMatch, check_relevance
 from app.riskripple.alerts.verification import classify_match
@@ -159,6 +160,7 @@ def _generate_recommendation(
     industry: str | None,
     classification: str,
     price_note: str | None = None,
+    persona: PersonaId | None = None,
 ) -> str:
     if match.relationship == "direct":
         relationship_note = "a direct mention of this holding"
@@ -178,7 +180,7 @@ def _generate_recommendation(
     )
     response = client.converse(
         modelId=BEDROCK_MODEL_ID,
-        system=[{"text": RECOMMENDATION_SYSTEM_PROMPT}],
+        system=[{"text": RECOMMENDATION_SYSTEM_PROMPT + "\n" + persona_guidance(persona)}],
         messages=[{"role": "user", "content": [{"text": user_text}]}],
         inferenceConfig={"maxTokens": 300, "temperature": 0.2},
     )
@@ -192,6 +194,7 @@ def run_alert_scan(
     bedrock_client=None,
     strict_materials_only: bool = False,
     deduplicate: bool = True,
+    persona: PersonaId | None = None,
 ) -> list[dict]:
     """`documents` is a list of {"document_number", "title", "abstract", ...} (the
     shape `ingestion.regulatory_events.search_documents*` returns, as plain dicts).
@@ -240,6 +243,8 @@ def run_alert_scan(
             matches = _consolidate_matches_by_symbol(matches)
 
             doc_key = doc.get("document_number") or doc.get("title", "")
+            if persona:
+                doc_key = f"{doc_key}:{persona.value}"
             if deduplicate:
                 candidates = [(doc_key, user_id, m.symbol) for m in matches]
                 unseen_keys = {(s,) for (_, _, s) in alerts_db.filter_unseen(candidates)}
@@ -301,6 +306,7 @@ def run_alert_scan(
                         industry=industries.get(m.symbol),
                         classification=classification,
                         price_note=_cached_price_note(m.symbol),
+                        persona=persona,
                     )
                 except Exception as exc:
                     rec_text = None

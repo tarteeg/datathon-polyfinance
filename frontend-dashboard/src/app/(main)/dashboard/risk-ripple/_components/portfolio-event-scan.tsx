@@ -23,6 +23,7 @@ type Position = {
   citations?: Evidence[];
 };
 type EventResult = {
+  investor_note?: { ticker: string; interpretation: string; question: string };
   id: string;
   title: string;
   published: string;
@@ -32,6 +33,7 @@ type EventResult = {
   outside: Position[];
 };
 type Report = {
+  persona?: string;
   start: string;
   end: string;
   screened: number;
@@ -174,6 +176,13 @@ export function PortfolioEventScan({ hasHoldings }: { hasHoldings: boolean }) {
                   {event.exposed_weight !== null &&
                     ` · Linked positions represent ${percent.format(event.exposed_weight)} of your portfolio`}
                 </p>
+                {event.investor_note && report.persona && (
+                  <div className="flex flex-col gap-1 text-sm">
+                    <h4 className="font-medium"><span className="capitalize">{report.persona}</span>’s perspective · {event.investor_note.ticker}</h4>
+                    <p>{event.investor_note.interpretation}</p>
+                    <p>{event.investor_note.question}</p>
+                  </div>
+                )}
                 <h4 className="text-sm font-medium">Your portfolio</h4>
                 <ul className="flex flex-col gap-3">
                   {event.holdings.map((p) => (

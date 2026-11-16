@@ -1,4 +1,7 @@
+import type { investorPersonas } from "./investor-personas";
+
 type SamplePortfolio = {
+  persona?: (typeof investorPersonas)[number]["id"];
   name: string;
   theme: string;
   weights: Record<string, number>;
@@ -9,6 +12,24 @@ export const samplePortfolios: SamplePortfolio[] = [
     name: "Magnificent Tech",
     theme: "Big Tech and AI",
     weights: { NVDA: 25, MSFT: 25, AAPL: 20, GOOGL: 15, AMZN: 15 },
+  },
+  {
+    persona: "amira",
+    name: "Amira · Chips, cloud and crypto",
+    theme: "Trace a chip restriction through an AI supplier and a cloud customer. Compare that shared risk with the rest of a 15+ year growth portfolio. COIN is an exchange business.",
+    weights: { NVDA: 25, MSFT: 20, COIN: 10, JPM: 15, PEP: 15, CAT: 15 },
+  },
+  {
+    persona: "mateo",
+    name: "Mateo · Power transition and bonds",
+    theme: "Explore how new solar capacity affects a manufacturer and a utility over 8–12 years. Look for measured environmental and workforce outcomes alongside the business case.",
+    weights: { IEF: 30, FSLR: 15, NEE: 15, MSFT: 15, PEP: 15, JPM: 10 },
+  },
+  {
+    persona: "robert",
+    name: "Robert · Treasuries with a small AI position",
+    theme: "Compare a 5% NVIDIA position with the Treasury and established-company holdings. Test what a headline could mean for income and capital over 3–5 years.",
+    weights: { BIL: 50, SHY: 15, PEP: 10, JNJ: 10, WMT: 10, NVDA: 5 },
   },
   {
     name: "AI & Semiconductors",

@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     headers: { "Content-Type": "application/json", "X-Chat-Key": process.env.CHAT_API_KEY ?? "" },
     body: JSON.stringify({
       question,
+      persona: user.investorPersona,
       decision_lab: parsed.data.decisionLab,
       holdings: parsed.data.decisionLab ? undefined : await getHoldings(),
       history: recent.rows.reverse().map(({ question, answer }) => ({ question, answer: savedChatAnswer(answer) })),

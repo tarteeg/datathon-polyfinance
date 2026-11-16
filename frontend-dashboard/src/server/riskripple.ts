@@ -87,6 +87,7 @@ export async function triggerInvestigation(
   tickers: string[],
   userId: string,
   requestId: string,
+  persona?: string | null,
 ): Promise<{ status: "pending"; request_id: string }> {
   const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
   const response = await fetch(new URL("/riskripple/investigate", backend), {
@@ -97,6 +98,7 @@ export async function triggerInvestigation(
       portfolio_holdings: tickers,
       user_id: userId,
       request_id: requestId,
+      persona,
     }),
     cache: "no-store",
     // This returns almost immediately now (background task) -- generous timeout only
@@ -209,9 +211,9 @@ export type ScanResponse = {
   error_message: string | null;
 };
 
-async function postScan(path: string, tickers: string[], userId: string, limitPerTicker?: number): Promise<ScanResponse> {
+async function postScan(path: string, tickers: string[], userId: string, persona?: string | null, limitPerTicker?: number): Promise<ScanResponse> {
   const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
-  const body: Record<string, unknown> = { portfolio_holdings: tickers, user_id: userId };
+  const body: Record<string, unknown> = { portfolio_holdings: tickers, user_id: userId, persona };
   if (limitPerTicker) body.limit_per_ticker = limitPerTicker;
   const response = await fetch(new URL(path, backend), {
     method: "POST",
@@ -236,10 +238,11 @@ async function postScan(path: string, tickers: string[], userId: string, limitPe
   };
 }
 
-async function getScanStatus(path: string, userId: string): Promise<ScanResponse> {
+async function getScanStatus(path: string, userId: string, persona?: string | null): Promise<ScanResponse> {
   const backend = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
   const url = new URL(path, backend);
   url.searchParams.set("user_id", userId);
+  if (persona) url.searchParams.set("persona", persona);
   const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`Scan status request failed (${response.status})`);
   const data = (await response.json()) as Partial<ScanResponse>;
@@ -257,20 +260,20 @@ async function getScanStatus(path: string, userId: string): Promise<ScanResponse
 
 /** Kicks off (or returns the cached state of) a regulatory scan. Returns almost
  * immediately -- `status: "scanning"` means a background refresh just started. */
-export async function triggerRegulatoryScan(tickers: string[], userId: string): Promise<ScanResponse> {
-  return postScan("/riskripple/alerts/scan", tickers, userId);
+export async function triggerRegulatoryScan(tickers: string[], userId: string, persona?: string | null): Promise<ScanResponse> {
+  return postScan("/riskripple/alerts/scan", tickers, userId, persona);
 }
 
 /** Kicks off (or returns the cached state of) a news scan. Returns almost
  * immediately -- `status: "scanning"` means a background refresh just started. */
-export async function triggerNewsScan(tickers: string[], userId: string): Promise<ScanResponse> {
-  return postScan("/riskripple/alerts/scan-news", tickers, userId, 10);
+export async function triggerNewsScan(tickers: string[], userId: string, persona?: string | null): Promise<ScanResponse> {
+  return postScan("/riskripple/alerts/scan-news", tickers, userId, persona, 10);
 }
 
-export async function pollRegulatoryScan(userId: string): Promise<ScanResponse> {
-  return getScanStatus("/riskripple/alerts/scan/status", userId);
+export async function pollRegulatoryScan(userId: string, persona?: string | null): Promise<ScanResponse> {
+  return getScanStatus("/riskripple/alerts/scan/status", userId, persona);
 }
 
-export async function pollNewsScan(userId: string): Promise<ScanResponse> {
-  return getScanStatus("/riskripple/alerts/scan-news/status", userId);
+export async function pollNewsScan(userId: string, persona?: string | null): Promise<ScanResponse> {
+  return getScanStatus("/riskripple/alerts/scan-news/status", userId, persona);
 }

@@ -43,8 +43,8 @@ export async function triggerAlertsScan(): Promise<TriggerAlertsScanResult> {
 
   try {
     const [regulatory, news] = await Promise.all([
-      triggerRegulatoryScan(tickers, user.id),
-      triggerNewsScan(tickers, user.id),
+      triggerRegulatoryScan(tickers, user.id, user.investorPersona),
+      triggerNewsScan(tickers, user.id, user.investorPersona),
     ]);
     return { ok: true, data: { tickers, news, regulatory } };
   } catch {
@@ -62,7 +62,7 @@ export type PollAlertsScanResult = { ok: true; data: { news: ScanResponse; regul
 export async function pollAlertsScan(): Promise<PollAlertsScanResult> {
   const { user } = await requireSession();
   try {
-    const [regulatory, news] = await Promise.all([pollRegulatoryScan(user.id), pollNewsScan(user.id)]);
+    const [regulatory, news] = await Promise.all([pollRegulatoryScan(user.id, user.investorPersona), pollNewsScan(user.id, user.investorPersona)]);
     return { ok: true, data: { news, regulatory } };
   } catch {
     return { ok: false };

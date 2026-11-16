@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.modules.chat.routes import model_for_request, require_dashboard
 from app.riskripple import event_scan
 from app.riskripple.alerts import db
+from app.riskripple.personas.profiles import PersonaId
 
 router = APIRouter(prefix="/riskripple/events", tags=["riskripple"])
 Ticker = Annotated[str, Field(pattern=r"^[A-Z0-9^][A-Z0-9.^=-]{0,23}$")]
@@ -16,12 +17,14 @@ Quantity = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 
 class Request(BaseModel):
+    persona: PersonaId | None = None
     user_id: str = Field(min_length=1)
     holdings: dict[Ticker, Quantity | None]
 
     def cache_type(self):
         inputs = json.dumps(self.holdings, sort_keys=True).encode()
-        return "events30:" + hashlib.sha256(inputs).hexdigest()
+        key = "events30:" + hashlib.sha256(inputs).hexdigest()
+        return f"{key}:{self.persona.value}" if self.persona else key
 
 
 def state(request, row):
@@ -53,7 +56,7 @@ def status(request: Request, x_chat_key: str = Header(default="")):
 
 def run(request, key, model, lock):
     try:
-        report = event_scan.scan(request.holdings, model)
+        report = event_scan.scan(request.holdings, model, request.persona)
         db.save_scan_success(request.user_id, key, report)
     except event_scan.ModelAccessError as exc:
         db.save_scan_error(request.user_id, key, str(exc))

@@ -24,7 +24,7 @@ Settings lets a signed-in user choose Amira, Mateo, or Robert as their fictional
 
 Home calculates the day change for recorded positions from each latest quote minus its previous close, multiplied by the current share count. Watchlist entries are excluded. Totals are grouped by currency and require complete quote coverage.
 
-In **Settings → Sample portfolios**, users can replace their saved holdings with a preset allocation. The dashboard fetches USD quotes from FastAPI and converts each target dollar amount to fractional shares. It replaces only the signed-in account’s holdings in one database transaction after all quotes are available.
+In **Settings → Sample portfolios**, users can replace their saved holdings with a preset allocation. The dashboard fetches USD quotes from FastAPI and converts each target dollar amount to fractional shares. It replaces only the signed-in account’s holdings in one database transaction after all quotes are available. The saved persona preselects one fictional sample: chips, cloud and crypto for Amira, power transition and bonds for Mateo, or Treasuries with a small AI position for Robert. Users can apply any sample or switch personas independently to compare the same holdings.
 
 Visiting `/` opens `/dashboard/home`. The [Next.js proxy](frontend-dashboard/src/proxy.ts) checks the Better Auth session for dashboard requests and sends signed-out users to the login page. Account settings, including name and password changes, use the same Better Auth service inside Next.js.
 
@@ -71,7 +71,9 @@ Discover fetches the ranking with a 60-second revalidation interval. It uses the
 
 Bedrock screens batches of event summaries against the portfolio. FastAPI investigates up to twelve candidates using publisher articles and relevant passages from company filings. It checks every citation against its source and requires company filing evidence for indirect connections. It returns up to five events with a per-holding assessment and up to three supported outside companies each. When all owned positions have comparable quotes, their weights contribute to the ranking. Otherwise the ranking uses business relevance. Results identify incomplete evidence or screening.
 
-Aurora stores the most recent completed scan per user and holdings snapshot. A PostgreSQL advisory lock joins overlapping runs. Loading the page reads the saved result. Clicking the button reads current events and runs the agent again.
+After ranking, a separate Bedrock call receives the selected challenge profile and the already verified holdings for each returned event. It writes an interpretation and a follow-up question tied to an identified holding. Missing commentary leaves the findings visible. The dashboard also supplies the session persona to headline analysis, news and regulatory alert explanations, manual investigations and finance chat. BreakPoint uses the persona explicitly selected for its scenario.
+
+Aurora stores the most recent completed scan per user, holdings snapshot and selected persona. Accounts without a saved persona use the original neutral scan key. A PostgreSQL advisory lock joins overlapping runs. Loading the page reads the saved result. Clicking the button reads current events and runs the agent again.
 
 ## Headline impact and followed questions
 

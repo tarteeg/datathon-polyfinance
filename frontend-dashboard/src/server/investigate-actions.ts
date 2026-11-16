@@ -21,7 +21,7 @@ export async function triggerInvestigationAction(form: FormData): Promise<Trigge
 
   const requestId = randomUUID();
   try {
-    await triggerInvestigation(eventDescription, tickers, user.id, requestId);
+    await triggerInvestigation(eventDescription, tickers, user.id, requestId, user.investorPersona);
     return { ok: true, requestId };
   } catch {
     return { ok: false, error: "Couldn’t reach the investigation agent. Try again." };

@@ -11,9 +11,12 @@ import { samplePortfolios } from "@/data/sample-portfolios";
 import { formatCurrency } from "@/lib/utils";
 import { replaceSamplePortfolio } from "@/server/replace-sample-portfolio";
 
-export function SamplePortfolioForm() {
+export function SamplePortfolioForm({ savedPersona }: { savedPersona?: string | null }) {
   const id = useId();
-  const [name, setName] = useState(samplePortfolios[0].name);
+  const [name, setName] = useState(() => {
+    const preferred = savedPersona ? samplePortfolios.find((entry) => entry.persona === savedPersona) : undefined;
+    return (preferred ?? samplePortfolios[0]).name;
+  });
   const [amount, setAmount] = useState("10000");
   const [pending, startTransition] = useTransition();
   const sample = samplePortfolios.find((entry) => entry.name === name)!;
@@ -41,6 +44,12 @@ export function SamplePortfolioForm() {
             ))}
           </NativeSelect>
           <FieldDescription>{sample.theme}</FieldDescription>
+          {sample.persona && sample.persona !== savedPersona && (
+            <FieldDescription>
+              {savedPersona ? <>Analysis uses your saved <span className="capitalize">{savedPersona}</span> profile.</> : "Analysis uses the general investor view."}
+              {" "}Choose a profile in Investor persona to change the interpretation.
+            </FieldDescription>
+          )}
         </Field>
         <Field>
           <FieldLabel htmlFor={`${id}-value`}>Invested value (USD)</FieldLabel>

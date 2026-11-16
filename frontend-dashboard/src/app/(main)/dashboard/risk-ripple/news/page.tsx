@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { requireSession } from "@/lib/session";
 import { getHoldings } from "@/server/portfolio";
 import { PortfolioEventScan } from "../_components/portfolio-event-scan";
 import { NewsPageClient } from "./news-page-client";
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 export default async function Page() {
-  const holdings = await getHoldings();
+  const [holdings, { user }] = await Promise.all([getHoldings(), requireSession()]);
   return (
     <div className="flex flex-col gap-4">
       <div className="space-y-1">
@@ -24,8 +25,8 @@ export default async function Page() {
           regulatory sources — never hidden just because nothing was confirmed as a portfolio risk.
         </p>
       </div>
-      <PortfolioEventScan key={JSON.stringify(holdings)} hasHoldings={holdings.length > 0} />
-      <NewsPageClient />
+      <PortfolioEventScan key={JSON.stringify([holdings, user.investorPersona])} hasHoldings={holdings.length > 0} />
+      <NewsPageClient key={JSON.stringify([user.investorPersona, holdings])} />
     </div>
   );
 }

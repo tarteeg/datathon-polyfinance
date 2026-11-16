@@ -13,7 +13,7 @@ async function requestScan(action: "status" | "scan") {
       {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Chat-Key": process.env.CHAT_API_KEY ?? "" },
-        body: JSON.stringify({ user_id: session.user.id, holdings }),
+        body: JSON.stringify({ user_id: session.user.id, holdings, persona: session.user.investorPersona }),
         cache: "no-store",
         signal: AbortSignal.timeout(25000),
       },

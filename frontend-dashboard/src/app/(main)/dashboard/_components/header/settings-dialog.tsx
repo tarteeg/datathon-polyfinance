@@ -87,7 +87,7 @@ function SettingsPanels({ user }: { user: Profile }) {
               </>
             )}
             {section === "Investor persona" && <InvestorPersonaForm savedPersona={user.investorPersona} />}
-            {section === "Sample portfolios" && <SamplePortfolioForm />}
+            {section === "Sample portfolios" && <SamplePortfolioForm key={user.investorPersona} savedPersona={user.investorPersona} />}
             {section === "Preferences" && <LayoutControls />}
           </div>
         </div>

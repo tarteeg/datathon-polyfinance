@@ -118,3 +118,46 @@ def test_full_month_compared_before_source_lookup(monkeypatch):
     result = agent.scan({"A": None}, "test")
     assert result["screened"] == 301 and result["shortlisted"] == 1 and visited == ["300"]
     assert result["warnings"] and not result["events"]
+
+
+def test_same_findings_get_a_separate_investor_interpretation(monkeypatch):
+    from copy import deepcopy
+    from app.riskripple.personas.profiles import PersonaId
+
+    finding = {"ticker": "PEP", "status": "supported", "weight": .10, "explanation": "The company announced job cuts."}
+    base = [{"id": "one", "title": "PepsiCo announces restructuring", "holdings": [finding]}]
+    prompts = []
+    def review(model, schema, prompt, data):
+        prompts.append(prompt)
+        assert data["events"][0]["holdings"] == [finding]
+        return schema(notes=[{"event_id": "one", "ticker": "PEP", "interpretation": "This is a question of execution.",
+                              "question": "Which filing will disclose restructuring costs?"}])
+    monkeypatch.setattr(agent, "ask", review)
+    for persona in PersonaId:
+        events = deepcopy(base)
+        assert agent.add_investor_notes(events, "model", persona)
+        assert events[0].pop("investor_note")["ticker"] == "PEP"
+        assert events == base
+    assert "diversification" in prompts[0] and "15+" in prompts[0]
+    assert "governance" in prompts[1] and "8-12" in prompts[1]
+    assert "income reliability" in prompts[2] and "3-5" in prompts[2]
+
+
+def test_unverified_persona_note_cannot_create_a_position(monkeypatch):
+    from app.riskripple.personas.profiles import PersonaId
+    events = [{"id": "one", "title": "Restructuring", "holdings": [{"ticker": "A", "status": "incomplete"}]}]
+    monkeypatch.setattr(agent, "ask", lambda *args: agent.InvestorReview(notes=[{
+        "event_id": "one", "ticker": "A", "interpretation": "This would be unsupported.",
+        "question": "Can this unsupported position explain the event?"}]))
+    assert not agent.add_investor_notes(events, "model", PersonaId.MATEO)
+    assert "investor_note" not in events[0]
+
+
+def test_profile_switch_isolates_saved_reports_and_keeps_neutral_key():
+    import hashlib
+    import json
+    args = {"user_id": "owner", "holdings": {"PEP": 1}}
+    neutral = Request(**args)
+    old_key = "events30:" + hashlib.sha256(json.dumps(neutral.holdings, sort_keys=True).encode()).hexdigest()
+    assert neutral.cache_type() == old_key
+    assert len({neutral.cache_type(), *(Request(**args, persona=p).cache_type() for p in ("amira","mateo","robert"))}) == 4

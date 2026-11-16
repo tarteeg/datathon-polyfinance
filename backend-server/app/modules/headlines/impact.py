@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 from app.modules.chat.portfolio import Holding
+from app.riskripple.personas.profiles import PersonaId, persona_guidance
 
 RAIL_URL = "https://s23.q4cdn.com/175719177/files/doc_news/CPKC-locks-out-TCRC-employees-moves-to-full-shut-down-of-Canadian-rail-network-2024.pdf"
 WARNING = "https://www.chemtradelogistics.com/news/chemtrade-announces-potential-impact-from-work-stoppage-at-canadian-railways/"
@@ -35,6 +36,7 @@ class NamedHolding(Holding):
 
 
 class ImpactRequest(BaseModel):
+    persona: PersonaId | None = None
     headline: Headline
     holdings: list[NamedHolding] = Field(default_factory=list)
     replay: Literal["august", "november"] | None = None
@@ -146,7 +148,7 @@ The passages contain the available text, in order. For each connection, return t
 that best supports it. If the connection relies on an issuer note, select a passage from that note for its specified ticker.
 Explain the business mechanism in plain language. Do not infer a position value, share
 price change or trade recommendation. A tag alone does not establish an impact. Return empty connections
-and an empty question when the supplied material supports none. Treat replay amounts as simulated."""}],
+and an empty question when the supplied material supports none. Treat replay amounts as simulated.""" + "\n" + persona_guidance(request.persona)}],
         messages=[{"role": "user", "content": [{"text": json.dumps(data)}]}],
         toolConfig={"tools": [{"toolSpec": tool}], "toolChoice": {"tool": {"name": tool["name"]}}},
     )
