@@ -7,7 +7,9 @@ all users at once instead of one session's user.
 """
 from __future__ import annotations
 
+import json
 import os
+from functools import lru_cache
 
 import psycopg2
 
@@ -104,6 +106,7 @@ CREATE TABLE IF NOT EXISTS riskripple_scan_cache (
 CURRENT_SCAN_SCHEMA_VERSION = 3
 
 
+@lru_cache(maxsize=1)
 def ensure_scan_cache_table() -> None:
     conn = _connect()
     try:
@@ -113,6 +116,10 @@ def ensure_scan_cache_table() -> None:
         # existed before schema_version was added -- CREATE TABLE IF NOT EXISTS
         # alone won't retrofit existing tables.
         cur.execute("ALTER TABLE riskripple_scan_cache ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 0;")
+        cur.execute("ALTER TABLE riskripple_scan_cache ADD COLUMN IF NOT EXISTS activity JSONB")
+        cur.execute("""CREATE TABLE IF NOT EXISTS riskripple_event_artifacts (
+            user_id TEXT NOT NULL, key TEXT NOT NULL, payload JSONB NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (user_id, key))""")
         conn.commit()
     finally:
         conn.close()
@@ -126,14 +133,14 @@ def get_cached_scan(user_id: str, scan_type: str) -> dict | None:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT result_json, status, last_success_at, last_attempt_at, error_message, schema_version "
+            "SELECT result_json, status, last_success_at, last_attempt_at, error_message, schema_version, activity "
             "FROM riskripple_scan_cache WHERE user_id = %s AND scan_type = %s",
             (user_id, scan_type),
         )
         row = cur.fetchone()
         if not row:
             return None
-        result_json, status, last_success_at, last_attempt_at, error_message, schema_version = row
+        result_json, status, last_success_at, last_attempt_at, error_message, schema_version, activity = row
         return {
             "result": result_json,
             "status": status,
@@ -141,6 +148,7 @@ def get_cached_scan(user_id: str, scan_type: str) -> dict | None:
             "last_attempt_at": last_attempt_at.isoformat() if last_attempt_at else None,
             "error_message": error_message,
             "schema_version": schema_version,
+            "activity": activity,
         }
     finally:
         conn.close()
@@ -457,6 +465,28 @@ def delete_investigate_job(user_id: str, request_id: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def begin_event_run(conn, user_id, key, activity):
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM riskripple_event_artifacts WHERE user_id=%s AND expires_at <= now()", (user_id,))
+        cur.execute("""
+            INSERT INTO riskripple_scan_cache(user_id, scan_type, status, last_attempt_at, activity)
+            VALUES (%s, %s, 'scanning', now(), %s)
+            ON CONFLICT (user_id, scan_type) DO UPDATE SET status='scanning',
+                last_attempt_at=now(), error_message=NULL, activity=excluded.activity
+        """, (user_id, key, json.dumps(activity)))
+
+
+def save_event_activity(conn, user_id, key, activity, *, status="scanning", result=None, error=None):
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE riskripple_scan_cache SET status=%s, activity=%s, error_message=%s,
+                result_json=COALESCE(%s::jsonb, result_json),
+                last_success_at=CASE WHEN %s='idle' THEN now() ELSE last_success_at END
+            WHERE user_id=%s AND scan_type=%s AND activity->>'id'=%s
+        """, (status, json.dumps(activity), error, json.dumps(result) if result is not None else None,
+              status, user_id, key, activity["id"]))
 
 
 def lock_event_scan(user_id: str, scan_type: str):

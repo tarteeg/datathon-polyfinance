@@ -73,7 +73,11 @@ Bedrock screens batches of event summaries against the portfolio. FastAPI invest
 
 After ranking, a separate Bedrock call receives the selected challenge profile and the already verified holdings for each returned event. It writes an interpretation and a follow-up question tied to an identified holding. Missing commentary leaves the findings visible. The dashboard also supplies the session persona to headline analysis, news and regulatory alert explanations, manual investigations and finance chat. BreakPoint uses the persona explicitly selected for its scenario.
 
-Aurora stores the most recent completed scan per user, holdings snapshot and selected persona. Accounts without a saved persona use the original neutral scan key. A PostgreSQL advisory lock joins overlapping runs. Loading the page reads the saved result. Clicking the button reads current events and runs the agent again.
+Aurora keeps the last completed report and current activity together for each account, holdings snapshot and persona. Overlapping requests for the same scan join through a PostgreSQL advisory lock. The dashboard polls for actual step results and shows cited findings as verification finishes. Reloading resumes the activity view. A failed refresh preserves the previous report.
+
+Each click checks the current StocksFeed window. A matching event list, company catalog, filing revisions and fresh portfolio research allow an immediate saved report. Fresh publisher passages and quote weights can be reused for five minutes. Edits to a publisher body that keep the canonical event unchanged become visible on the next source refresh. The agent screens up to 100 events per publication-day batch. It reuses unchanged batches when stories appear, change or age out, then uses current weights to compare candidates and rank verified findings. Two candidates can undergo source verification at once. Each worker process reuses issuer filing indexes keyed by the local text and metadata revision.
+
+The account-scoped `riskripple_event_artifacts` table stores screening, evidence assessments and persona interpretations under hashes of their inputs and the analysis version. These artifacts expire after at most 30 days. Switching personas can reuse the same ranked research and generate only the new interpretation. The saved activity includes time to the first verified finding, elapsed time and model call count.
 
 ## Headline impact and followed questions
 
