@@ -6,7 +6,7 @@ A signed-in user presses **Scan my portfolio** in RiskRipple. The agent reads th
 
 We considered starting from an event the user selects and starting from a portfolio scan. The user chose the scan so discovery happens before they know which story to open. Reuse RiskRipple's background scan and polling pattern. Opening the page displays the last result and its timestamp. Pressing the button starts a scan or joins one already in progress for the same inputs.
 
-Proposed starting defaults are seven days of published coverage, up to five material events and up to three additional companies per event drawn from the StocksFeed S&P 500 universe. Assess every holding regardless of index membership. A scan can return fewer results, including zero. Show watchlist-only positions separately because they have no position value. For an account with only watchlist entries, rank by supported business relevance and explain that basis.
+Proposed starting defaults are 30 days of published coverage, up to five material events and up to three additional companies per event drawn from the StocksFeed S&P 500 universe. Assess every holding regardless of index membership. A scan can return fewer results, including zero. Show watchlist-only positions separately because they have no position value. For an account with only watchlist entries, rank by supported business relevance and explain that basis.
 
 ## Discover the event once
 

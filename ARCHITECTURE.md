@@ -10,7 +10,9 @@ flowchart LR
     Next -->|HTTP| API["FastAPI"]
     API -->|Quotes and history via yfinance| Yahoo["Yahoo Finance"]
     Browser -->|Article thumbnails| Publisher["Publisher image hosts"]
-    API -->|Articles and sector rankings| Feed["StocksFeed API"]
+    API -->|Canonical events, articles and sector rankings| Feed["StocksFeed API"]
+    API -->|Event scan status and results| DB
+    API -->|Issuer filings| SEC["SEC EDGAR"]
     API -->|Daily exchange rates| BoC["Bank of Canada Valet API"]
     API -->|Reply figures and tool results| Check["Figure check"]
     Check -->|Statements of the reply| Bedrock
@@ -60,6 +62,14 @@ The [stock history fetcher](frontend-dashboard/src/server/stock-history.ts) conv
 Portfolio News and stock detail pages request up to 50 articles per feed, or 500 for a 24-hour selection. Both pages send the selected publisher to FastAPI. StocksFeed applies it before the result limit and returns publisher choices for the other active filters. The dashboard displays matching articles in batches of 15.
 
 Discover fetches the ranking with a 60-second revalidation interval. It uses the quote endpoint separately to display each company's price and daily change. StocksFeed owns article collection and analysis. It stores the publisher’s preview image URL when available. Portfolio News and stock pages load that image directly from the publisher and keep a text-only layout when it is missing or fails to load. To build a datathon-specific news source, start with the [StocksFeed integration](backend-server/app/integrations/stocksfeed/service.py). It is the point where the template makes outbound HTTP requests and checks the returned data. The news routes report upstream failures as HTTP 502.
+
+## On-demand portfolio event scan
+
+**Scan my portfolio** on RiskRipple’s news page starts a 30-day scan. Next.js sends the signed-in user’s current positions to an authenticated FastAPI route. FastAPI fetches StocksFeed’s `GET /events`, which returns Trading AI catalyst clusters with article publication dates inside the rolling window. A cluster can have no tagged ticker. StocksFeed also supplies the S&P 500 catalog for outside-company discovery.
+
+Bedrock screens batches of event summaries against the portfolio. FastAPI investigates up to twelve candidates using publisher articles and relevant passages from company filings. It checks every citation against its source and requires company filing evidence for indirect connections. It returns up to five events with a per-holding assessment and up to three supported outside companies each. When all owned positions have comparable quotes, their weights contribute to the ranking. Otherwise the ranking uses business relevance. Results identify incomplete evidence or screening.
+
+Aurora stores the most recent completed scan per user and holdings snapshot. A PostgreSQL advisory lock joins overlapping runs. Loading the page reads the saved result. Clicking the button reads current events and runs the agent again.
 
 ## Headline impact and followed questions
 

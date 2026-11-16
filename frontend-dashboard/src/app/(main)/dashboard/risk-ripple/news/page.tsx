@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { getHoldings } from "@/server/portfolio";
+import { PortfolioEventScan } from "../_components/portfolio-event-scan";
 import { NewsPageClient } from "./news-page-client";
 
 export const metadata: Metadata = {
@@ -11,7 +13,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Page() {
+export default async function Page() {
+  const holdings = await getHoldings();
   return (
     <div className="flex flex-col gap-4">
       <div className="space-y-1">
@@ -21,6 +24,7 @@ export default function Page() {
           regulatory sources — never hidden just because nothing was confirmed as a portfolio risk.
         </p>
       </div>
+      <PortfolioEventScan key={JSON.stringify(holdings)} hasHoldings={holdings.length > 0} />
       <NewsPageClient />
     </div>
   );
