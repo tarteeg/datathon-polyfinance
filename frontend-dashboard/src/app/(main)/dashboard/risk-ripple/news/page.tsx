@@ -19,13 +19,12 @@ export default async function Page() {
   return (
     <div className="flex flex-col gap-4">
       <div className="space-y-1">
-        <h1 className="text-3xl tracking-tight">News & Geopolitical Intelligence</h1>
+        <h1 className="text-balance text-3xl font-semibold tracking-tight">News & Geopolitical Intelligence</h1>
         <p className="text-muted-foreground text-sm">
-          Simulation only, not investment advice. Real recent articles for your holdings, checked against real
-          regulatory sources — never hidden just because nothing was confirmed as a portfolio risk.
+          Explore portfolio news and regulatory evidence. For simulation only, not investment advice.
         </p>
       </div>
-      <PortfolioEventScan key={JSON.stringify([holdings, user.investorPersona])} hasHoldings={holdings.length > 0} />
+      <PortfolioEventScan key={JSON.stringify([holdings, user.investorPersona])} positionCount={holdings.length} />
       <NewsPageClient key={JSON.stringify([user.investorPersona, holdings])} />
     </div>
   );
