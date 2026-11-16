@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001193125-26-323660)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526323660/msft-20260630.htm",
+  "retrieved_at": "2026-11-14T21:59:43.534376Z",
+  "observation_date": null,
+  "publication_date": "2026-07-29",
+  "currency": null,
+  "data_version": "6d702db7b014494a",
+  "content_hash": "6d702db7b014494aa5c352f5bd9034cffcff003052c6379f0e82ed65775deb9b",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Services-Prepackaged Software",
+  "company_name": "MICROSOFT CORP",
+  "fetched_live": true
+}

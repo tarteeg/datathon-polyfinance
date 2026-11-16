@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001628280-26-004357)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/12927/000162828026004357/ba-20251231.htm",
+  "retrieved_at": "2026-11-14T21:00:55.067752Z",
+  "observation_date": null,
+  "publication_date": "2026-01-30",
+  "currency": null,
+  "data_version": "80d7483f066e403a",
+  "content_hash": "80d7483f066e403a40a93730126f872aabff6a4eda6ffe1065e5e52d08401f7b",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Aircraft",
+  "company_name": "BOEING CO",
+  "fetched_live": true
+}

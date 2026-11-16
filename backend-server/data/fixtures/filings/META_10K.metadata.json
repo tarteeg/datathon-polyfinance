@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001628280-26-003942)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026003942/meta-20251231.htm",
+  "retrieved_at": "2026-11-15T16:10:45.790306Z",
+  "observation_date": null,
+  "publication_date": "2026-01-29",
+  "currency": null,
+  "data_version": "04f6695f8ecc3078",
+  "content_hash": "04f6695f8ecc30783e19eb88807467daedd64599d91ac8fd033ae3730863d96c",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Services-Computer Programming, Data Processing, Etc.",
+  "company_name": "Meta Platforms, Inc.",
+  "fetched_live": true
+}

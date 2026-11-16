@@ -32,6 +32,14 @@ def fetch_articles(params: dict) -> dict:
 
 def fetch_article(slug: str) -> dict:
     payload = _fetch(f"article/{quote(slug, safe='')}")
+    return _article_result(payload)
+
+
+def fetch_article_by_url(url):
+    return _article_result(_fetch("article", {"url": url}))
+
+
+def _article_result(payload):
     if "article" not in payload or not isinstance(payload["article"], (dict, type(None))):
         raise StocksFeedError("Invalid StocksFeedAI article response")
     return payload
@@ -41,4 +49,11 @@ def fetch_most_mentioned(sector, hours, limit):
     payload = _fetch("stocks/most-mentioned", {"sector": sector, "hours": hours, "limit": limit})
     if not isinstance(payload.get("stocks"), list) or not isinstance(payload.get("sectors"), list):
         raise StocksFeedError("Invalid StocksFeedAI ranking response")
+    return payload
+
+
+def fetch_recent_events():
+    payload = _fetch("events")
+    if not all(isinstance(payload.get(key), list) for key in ("events", "companies")):
+        raise StocksFeedError("Invalid canonical event feed")
     return payload

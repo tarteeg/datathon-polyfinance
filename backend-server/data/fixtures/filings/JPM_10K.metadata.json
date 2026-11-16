@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0001628280-26-008131)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/19617/000162828026008131/jpm-20251231.htm",
+  "retrieved_at": "2026-11-14T21:00:35.892048Z",
+  "observation_date": null,
+  "publication_date": "2026-02-13",
+  "currency": null,
+  "data_version": "23f3c074c45467d0",
+  "content_hash": "23f3c074c45467d0ca176aa1be745a0e93d6af7b4f585970293747098dc71c9e",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "National Commercial Banks",
+  "company_name": "JPMORGAN CHASE & CO",
+  "fetched_live": true
+}

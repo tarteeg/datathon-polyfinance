@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-Period = Literal["1d", "5d", "1mo", "3mo", "6mo", "ytd", "1y", "3y", "5y"]
+Period = Literal["1d", "5d", "mtd", "1mo", "2mo", "3mo", "6mo", "ytd", "1y", "3y", "5y"]
 
 
 class Quote(BaseModel):
@@ -11,6 +11,7 @@ class Quote(BaseModel):
     name: str
     exchange: str | None = None
     currency: str | None
+    priorMonthClose: float | None = None
     previousClose: float | None = None
     regularMarketPrice: float
     regularMarketTime: int | None

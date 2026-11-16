@@ -1,0 +1,13 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0000050863-26-000011)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000011/intc-20251227.htm",
+  "retrieved_at": "2026-11-11T00:29:07.928524Z",
+  "observation_date": null,
+  "publication_date": "2026-01-23",
+  "currency": null,
+  "data_version": "7d2a1cac3e153db5",
+  "content_hash": "7d2a1cac3e153db5104c95a46a8fa8fa81efba128f20f3bc170d49762960984e",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Semiconductors & Related Devices",
+  "company_name": "INTEL CORP"
+}

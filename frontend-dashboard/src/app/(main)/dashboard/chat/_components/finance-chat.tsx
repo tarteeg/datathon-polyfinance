@@ -29,19 +29,47 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 
-import { listThreads, loadHistory, sendMessage } from "../actions";
+import { ActivityTimeline } from "./activity-timeline";
+import { type ChatActivity, readChatStream } from "@/lib/chat-stream";
+import { type StockSnapshot, listThreads, loadHistory } from "../actions";
 
-// Bedrock returns one completed reply. Publish it as one OpenUI message.
-const replyAdapter: StreamProtocolAdapter = {
-  async *parse(response) {
-    const messageId = crypto.randomUUID();
-    yield { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" };
-    yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta: await response.text() };
-    yield { type: EventType.TEXT_MESSAGE_END, messageId };
-  },
-};
+import type { PortfolioSnapshot } from "./portfolio-breakdown";
+
+type Evidence = { activity?: ChatActivity[]; stockPlot?: StockSnapshot; portfolio?: PortfolioSnapshot };
 
 export function FinanceChat({ requestedThread }: { requestedThread?: string }) {
+  const [liveEvidence, setLiveEvidence] = useState<Record<string, Evidence>>({});
+  const replyAdapter: StreamProtocolAdapter = {
+    async *parse(response) {
+      const messageId = response.headers.get("x-message-id") ?? crypto.randomUUID();
+      yield { type: EventType.TEXT_MESSAGE_START, messageId, role: "assistant" };
+      for await (const event of readChatStream(response)) {
+        if (event.error) throw new Error(event.error);
+        if (event.activity) {
+          const step: ChatActivity = event.activity;
+          setLiveEvidence((previous) => {
+            const prior = previous[messageId];
+            const steps = new Map(prior?.activity?.map((item) => [item.id, item]));
+            steps.set(step.id, step);
+            return { ...previous, [messageId]: { ...prior, activity: [...steps.values()] } };
+          });
+          continue;
+        }
+        if (event.done) {
+          if (event.stock || event.portfolio)
+            setLiveEvidence((previous) => ({
+              ...previous,
+              [messageId]: { ...previous[messageId], stockPlot: event.stock, portfolio: event.portfolio },
+            }));
+          window.dispatchEvent(new Event("finance-chat-saved"));
+          yield { type: EventType.TEXT_MESSAGE_END, messageId };
+          return;
+        }
+        if (event.delta) yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId, delta: event.delta };
+      }
+      throw new Error("The reply was interrupted. Reload the conversation to retry.");
+    },
+  };
   return (
     <ChatProvider
       fetchThreadList={listThreads}
@@ -51,31 +79,49 @@ export function FinanceChat({ requestedThread }: { requestedThread?: string }) {
         createdAt: Date.now(),
       })}
       loadThread={async (id) =>
-        (await loadHistory(id)).flatMap<ChatMessage>(({ turn, question, answer, chart_snapshot }) => [
-          { id: `q-${turn}`, role: "user", content: question },
-          { id: `a-${turn}`, role: "assistant", content: answer, snapshot: chart_snapshot },
-        ])
+        (await loadHistory(id)).flatMap<ChatMessage>(
+          ({ turn, question, answer, chart_snapshot, stock_snapshot, portfolio_snapshot, tool_activity }) => [
+            { id: `q-${turn}`, role: "user", content: question },
+            {
+              id: `a-${turn}`,
+              role: "assistant",
+              content: answer,
+              snapshot: chart_snapshot,
+              activity: tool_activity,
+              stockPlot: stock_snapshot,
+              portfolio: portfolio_snapshot,
+            },
+          ],
+        )
       }
-      processMessage={async ({ threadId, messages }) => {
+      processMessage={async ({ threadId, messages, abortController }) => {
         const question = messages.at(-1)?.content;
         if (typeof question !== "string") throw new Error("Enter a message.");
         const completed = messages.filter((message) => message.role === "assistant").length;
-        const result = await sendMessage(threadId, question, completed);
-        if (!("saved" in result) || !result.saved) throw new Error(result.error);
-        window.dispatchEvent(new Event("finance-chat-saved"));
-        return new Response(result.saved.answer);
+        const response = await fetch("/api/finance-chat", {
+          method: "POST",
+          signal: abortController.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId, question, lastTurn: completed }),
+        });
+        if (!response.ok)
+          throw new Error(
+            response.status === 409 ? "Your chat changed. Reload the conversation." : "The assistant is unavailable.",
+          );
+        return response;
       }}
       streamProtocol={replyAdapter}
     >
-      <Conversation requestedThread={requestedThread} />
+      <Conversation requestedThread={requestedThread} liveEvidence={liveEvidence} />
     </ChatProvider>
   );
 }
 
 const starters = [
   "What does it mean to own a stock?",
-  "Compare stocks and bonds",
-  "Explain diversification with an example",
+  "How is my portfolio doing today?",
+  "Compare Apple and Microsoft over the past month.",
+  "Which energy companies are getting the most news coverage this week?",
 ];
 
 function CopyReply({ text }: { text: string }) {
@@ -109,7 +155,13 @@ function CopyReply({ text }: { text: string }) {
   );
 }
 
-function Conversation({ requestedThread }: { requestedThread?: string }) {
+function Conversation({
+  requestedThread,
+  liveEvidence,
+}: {
+  requestedThread?: string;
+  liveEvidence: Record<string, Evidence>;
+}) {
   const router = useRouter();
   const mounted = useRef(false);
   useEffect(() => {
@@ -165,8 +217,8 @@ function Conversation({ requestedThread }: { requestedThread?: string }) {
 
   // OpenUI keeps the optimistic question on failure so the user can see what to retry.
   useEffect(() => {
-    if (!sending && !isRunning && messages.at(-1)?.role === "assistant") setDraft("");
-  }, [sending, isRunning, messages]);
+    if (!threadError && !sending && !isRunning && messages.at(-1)?.role === "assistant") setDraft("");
+  }, [sending, isRunning, messages, threadError]);
 
   useEffect(() => {
     function clearNewChat() {
@@ -263,6 +315,7 @@ function Conversation({ requestedThread }: { requestedThread?: string }) {
               {messages.map((message) => {
                 const { id, role, content } = message;
                 const snapshot = (message as ChatMessage & { snapshot?: ChartSnapshot }).snapshot;
+                const streaming = isRunning && role === "assistant" && id === messages.at(-1)?.id;
                 const reply = role === "assistant" && typeof content === "string" ? parseFinanceReply(content) : null;
                 return (
                   <MessageScrollerItem key={id} messageId={id}>
@@ -277,9 +330,18 @@ function Conversation({ requestedThread }: { requestedThread?: string }) {
                       ) : (
                         <div className="min-w-0 flex-1 wrap-anywhere text-base leading-7 [&>*+*]:mt-3 [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6 [&_li+li]:mt-1 [&_a]:underline [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_:is(h1,h2,h3,h4,h5,h6)]:font-semibold">
                           <span className="sr-only">Assistant: </span>
+                          <ActivityTimeline
+                            steps={(message as ChatMessage & Evidence).activity ?? liveEvidence[id]?.activity}
+                            streaming={streaming}
+                          />
                           {reply && (
                             <>
-                              <FinanceReply reply={reply} />
+                              <FinanceReply
+                                partial={streaming && typeof content === "string" ? content : undefined}
+                                reply={reply}
+                                portfolio={(message as ChatMessage & Evidence).portfolio ?? liveEvidence[id]?.portfolio}
+                                plot={(message as ChatMessage & Evidence).stockPlot ?? liveEvidence[id]?.stockPlot}
+                              />
                               {snapshot && (
                                 <>
                                   <SavedChart snapshot={snapshot} />
@@ -293,7 +355,19 @@ function Conversation({ requestedThread }: { requestedThread?: string }) {
                                   </Button>
                                 </>
                               )}
-                              <CopyReply text={reply.copy} />
+                              {!streaming && <CopyReply text={reply.copy} />}
+                              {!busy && !threadError && id === messages.at(-1)?.id && Boolean(reply.followUps?.length) && (
+                                <div role="group" aria-label="Suggested follow-up questions" className="flex flex-wrap gap-2">
+                                  {reply.followUps?.map((question) => (
+                                    <Button key={question} variant="outline" size="sm"
+                                      className="h-auto max-w-full py-1.5 text-left whitespace-normal"
+                                      onClick={() => void submit(question)}>
+                                      {question}
+                                      <ArrowUpRight data-icon="inline-end" />
+                                    </Button>
+                                  ))}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
@@ -302,7 +376,11 @@ function Conversation({ requestedThread }: { requestedThread?: string }) {
                   </MessageScrollerItem>
                 );
               })}
-              {(isRunning || isLoadingMessages) && (
+              {((isRunning &&
+                !messages.at(-1)?.content &&
+                !liveEvidence[messages.at(-1)?.id ?? ""]?.activity?.length) ||
+                (isRunning && messages.at(-1)?.role === "user") ||
+                isLoadingMessages) && (
                 <p role="status" className="text-muted-foreground text-sm">
                   {isLoadingMessages ? "Loading conversation…" : "Thinking…"}
                 </p>

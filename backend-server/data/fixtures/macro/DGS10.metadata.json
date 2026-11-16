@@ -1,0 +1,11 @@
+{
+  "source_name": "FRED series DGS10 (10-Year Treasury Constant Maturity Rate)",
+  "source_url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10",
+  "retrieved_at": "2026-11-11T00:29:03.453647Z",
+  "observation_date": "2026-11-09",
+  "publication_date": null,
+  "currency": "USD",
+  "data_version": "0a19145416475025",
+  "content_hash": "0a19145416475025a3db81f1d24cddde626211cc098ccba2c22c4baf426c5bb4",
+  "license_or_restriction": "Federal Reserve Economic Data (FRED), public domain / free to use with attribution per FRED's terms of use."
+}

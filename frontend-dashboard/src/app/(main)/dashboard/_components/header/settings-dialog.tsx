@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleUserRound, Settings, SlidersHorizontal } from "lucide-react";
+import { CircleUserRound, Compass, PieChart, Settings, SlidersHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactElement, useState } from "react";
 import { toast } from "sonner";
@@ -14,14 +14,18 @@ import { authClient } from "@/lib/auth-client";
 import { getInitials } from "@/lib/utils";
 
 import { ChangePasswordDialog } from "./change-password-dialog";
+import { InvestorPersonaForm } from "./investor-persona-form";
 import { LayoutControls } from "./layout-controls";
+import { SamplePortfolioForm } from "./sample-portfolio-form";
 
 const sections = [
   { title: "Account", icon: CircleUserRound },
+  { title: "Investor persona", icon: Compass },
+  { title: "Sample portfolios", icon: PieChart },
   { title: "Preferences", icon: SlidersHorizontal },
 ] as const;
 
-type Profile = { name: string; email: string; avatar: string };
+export type Profile = { name: string; email: string; avatar: string; investorPersona?: string | null };
 
 export function SettingsDialog({ user, children }: { user: Profile; children?: ReactElement }) {
   return (
@@ -44,7 +48,7 @@ function SettingsPanels({ user }: { user: Profile }) {
       <aside className="flex shrink-0 flex-col border-b bg-muted/30 p-3 md:w-[220px] md:border-r md:border-b-0">
         <DialogTitle className="px-2 pt-2 pb-4">Settings</DialogTitle>
         <DialogDescription className="sr-only">Manage your account and dashboard preferences.</DialogDescription>
-        <nav aria-label="Settings sections" className="flex gap-1 md:flex-col">
+        <nav aria-label="Settings sections" className="flex flex-wrap gap-1 md:flex-col">
           {sections.map(({ title, icon: Icon }) => (
             <Button
               key={title}
@@ -73,7 +77,7 @@ function SettingsPanels({ user }: { user: Profile }) {
         <h2 className="border-b px-4 py-4 text-xl font-semibold tracking-tight sm:px-6">{section}</h2>
         <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20 p-4 sm:p-6">
           <div className="rounded-xl border bg-card p-4 text-card-foreground sm:p-5">
-            {section === "Account" ? (
+            {section === "Account" && (
               <>
                 <AccountProfile user={user} />
                 <div className="mt-5 flex items-center justify-between gap-3 border-t pt-4">
@@ -81,7 +85,10 @@ function SettingsPanels({ user }: { user: Profile }) {
                   <ChangePasswordDialog />
                 </div>
               </>
-            ) : <LayoutControls />}
+            )}
+            {section === "Investor persona" && <InvestorPersonaForm savedPersona={user.investorPersona} />}
+            {section === "Sample portfolios" && <SamplePortfolioForm key={user.investorPersona} savedPersona={user.investorPersona} />}
+            {section === "Preferences" && <LayoutControls />}
           </div>
         </div>
       </div>

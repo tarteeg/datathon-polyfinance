@@ -3,6 +3,7 @@ import { cache } from "react";
 
 export type StockHistoryData = {
   ticker: {
+    priorMonthClose?: number | null;
     previousClose?: number | null;
     name: string;
     exchange?: string | null;

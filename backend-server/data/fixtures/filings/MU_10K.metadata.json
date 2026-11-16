@@ -1,0 +1,14 @@
+{
+  "source_name": "SEC EDGAR filing 10-K (0000723125-26-000023)",
+  "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000023/mu-20260903.htm",
+  "retrieved_at": "2026-11-15T10:27:25.135567Z",
+  "observation_date": null,
+  "publication_date": "2026-10-09",
+  "currency": null,
+  "data_version": "ed9d6ba2bc85c0e9",
+  "content_hash": "ed9d6ba2bc85c0e971eafd97ebd7ffa1356b22f0ea4dd89f5342ba840613b382",
+  "license_or_restriction": "U.S. public filing via SEC EDGAR.",
+  "sic_description": "Semiconductors & Related Devices",
+  "company_name": "MICRON TECHNOLOGY INC",
+  "fetched_live": true
+}

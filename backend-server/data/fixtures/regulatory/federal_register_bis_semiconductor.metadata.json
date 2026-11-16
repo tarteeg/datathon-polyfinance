@@ -1,0 +1,11 @@
+{
+  "source_name": "Federal Register API (federalregister.gov)",
+  "source_url": "https://www.federalregister.gov/api/v1/documents.json?conditions%5Bterm%5D=semiconductor+export&per_page=20&order=newest&conditions%5Bagencies%5D%5B%5D=industry-and-security-bureau",
+  "retrieved_at": "2026-11-11T00:29:03.162271Z",
+  "observation_date": null,
+  "publication_date": null,
+  "currency": null,
+  "data_version": "b597b91b17861a3d",
+  "content_hash": "b597b91b17861a3ddc69e1c847d9845e9ff7da2c6a7f8f36190121e70013233f",
+  "license_or_restriction": "U.S. government public domain publication; official and free, no API key required."
+}

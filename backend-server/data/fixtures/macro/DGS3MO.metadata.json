@@ -1,0 +1,11 @@
+{
+  "source_name": "FRED series DGS3MO (3-Month Treasury Constant Maturity Rate)",
+  "source_url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS3MO",
+  "retrieved_at": "2026-11-11T00:29:04.177184Z",
+  "observation_date": "2026-11-09",
+  "publication_date": null,
+  "currency": "USD",
+  "data_version": "52f832786520f9db",
+  "content_hash": "52f832786520f9dbf3e994f9d8e35ebdd67094aadc5cf822167c9b833e3dc647",
+  "license_or_restriction": "Federal Reserve Economic Data (FRED), public domain / free to use with attribution per FRED's terms of use."
+}

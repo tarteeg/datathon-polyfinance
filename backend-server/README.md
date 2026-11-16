@@ -35,7 +35,7 @@ Candle times and the quote's `regularMarketTime` are Unix seconds.
 | Period | Candle interval |
 | --- | --- |
 | `1d` (default), `5d` | 1 minute |
-| `1mo`, `3mo`, `6mo`, `ytd`, `1y` | 1 hour |
+| `mtd`, `1mo`, `3mo`, `6mo`, `ytd`, `1y` | 1 hour |
 | `3y`, `5y` | 1 day |
 
 ## Layout
@@ -55,10 +55,14 @@ curl 'http://localhost:8000/articles?tickers=NVDA&limit=10'
 curl 'http://localhost:8000/article/your-article-slug'
 ```
 
+For example, `GET /articles?tickers=NVDA&source=Reuters&include_sources=true` returns matching articles plus the available publishers for NVDA. The source filter is applied before the limit.
+
 The list accepts `search`, comma-separated `tickers` and `sectors`, `sentiment`,
 `hours` (1–720), `only_with_tickers` (default true), and `limit` (1–500, default 20).
 A successful lookup with no matches returns an empty list or a null article.
-Upstream failures return HTTP 502.
+Portfolio impact requires the StocksFeed exact-URL route (`GET /article?url=…`). It returns the saved body and `source_content_type` (`full`, `excerpt`, or null on legacy records). Deploy the matching StocksFeed API change when pointing at a hosted feed. The dashboard-authenticated `POST /headlines/impact` runs Bedrock on the selected article and current portfolio. An incomplete model answer returns HTTP 502 so a later click can retry.
+
+Upstream failures return HTTP 502. When StocksFeed supplies an `image_url`, the dashboard uses it as the article thumbnail. To use a local StocksFeed API, set `STOCKSFEED_BASE_URL` in the backend’s `.env` to its origin and restart the backend.
 
 `GET /stocks/most-mentioned?sector=Technology&limit=10` returns S&P 500
 companies ranked by distinct article URLs collected over the past 24 hours.
@@ -67,8 +71,47 @@ sectors and the ranking’s UTC cutoff time.
 
 ## Finance chat
 
-`POST /chat` accepts the current question and up to ten previous exchanges from the signed-in dashboard. For stock-chart conversations the dashboard also supplies the saved chart figures in `chart`. FastAPI calls Bedrock Converse and returns an `answer`. The dashboard saves each completed exchange to Aurora.
+`POST /chat` accepts the current question and up to ten previous exchanges from the signed-in dashboard. For stock-chart conversations the dashboard also supplies the saved chart figures in `chart`. FastAPI calls Bedrock Converse and returns an `answer`. Interactive chat uses `POST /chat/stream` with the same request body. It sends newline-delimited JSON text deltas followed by a completion record containing the source snapshots. The dashboard saves each completed exchange to Aurora.
 
-Set `AWS_REGION` and `BEDROCK_MODEL_ID` in the backend environment to the region and model or inference profile you can invoke. Configure backend AWS credentials with `bedrock:InvokeModel` access or set a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Generate a shared key with `openssl rand -hex 32` and set `CHAT_API_KEY` to that value in both apps’ server environments. The dashboard supplies it in the `X-Chat-Key` header.
+Set `AWS_REGION` and `BEDROCK_MODEL_ID` in the backend environment to the region and model or inference profile you can invoke. Configure backend AWS credentials with `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream` access or set a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Generate a shared key with `openssl rand -hex 32` and set `CHAT_API_KEY` to that value in both apps’ server environments. The dashboard supplies it in the `X-Chat-Key` header.
 
-For news questions, Bedrock can request one read-only StocksFeed search per message. The response includes the numbered source list and a news snapshot. The dashboard can send that snapshot as `previous_news` when continuing a thread.
+When the dashboard supplies session-scoped holdings, Bedrock can request quantities, valuation or coverage of saved tickers through `get_my_portfolio`. Quotes are grouped by currency and stocks without a quantity are tracked separately. Run `npm run chat:migrate` in the dashboard to enable saved portfolio breakdowns.
+
+For news questions, Bedrock can request multiple read-only StocksFeed searches per message. The response includes the numbered source list and a news snapshot. The dashboard can send that snapshot as `previous_news` when continuing a thread.
+
+## Calculation tools
+
+`app/modules/analysis/` adds six read-only tools to the finance chat. Bedrock chooses them; every figure comes from the pure functions in `calculations.py`.
+
+| Tool | What it computes |
+| --- | --- |
+| `simulate_transfer` | Weights, sector exposure and concentration before and after moving a share of the whole portfolio from one holding to another |
+| `sector_exposure` | Sector weights, with the unclassified share |
+| `concentration` | Largest line, top-3 weight, Herfindahl index, effective number of lines |
+| `risk_history` | Total and annualized return, annualized volatility, maximum drawdown with dates, per symbol and for a constant-weight portfolio |
+| `check_data` | Whether price histories share dates and currency |
+| `convert_currency` | Amounts converted with the latest Bank of Canada daily rate |
+
+The user's own portfolio (`portfolio=mine`) is valued in CAD with the Bank of Canada rate. Sector shares come from Yahoo Finance; `risk_history` uses daily closes adjusted for splits and dividends. The tools need outbound HTTPS access to Yahoo Finance and `www.bankofcanada.ca`, and no new environment variable.
+
+## Figure check
+
+`app/modules/verification/` checks each reply after it streams. `/chat/stream` sends one more activity record, `verify_answer`, whose `output` holds the verdict (`verified`, `review`, `rejected` or `unverified`), the number of figures checked, the figures with no source and the figures computed from other figures. A second stage asks Bedrock, with the same model, to review the reply's statements: a cause drawn from a headline, advice, a data gap or a series mismatch the reply does not mention. It adds a call of one to three seconds after the reply has streamed. It can raise a `verified` reply to `review`, never reject one, and its findings are kept only if they quote words the reply contains. Set `VERIFIER_JUDGE=off` to skip it; no other variable is needed. If Bedrock fails the stage is skipped (`judge` is `unavailable`). `POST /chat` does not run the check. The figures it matches come from the tool results of the same question, the question itself, and the saved `chart`, `previous_stock`, `previous_news` and `history` fields. A failure inside the check never blocks a reply.
+
+Run the calculation and verification tests from this directory:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest tests
+```
+
+## BreakPoint AI
+
+Use `POST /decision-lab/analyze` for a fictional daily-rebalanced SPY/TLT portfolio. Weights, loss limit, shock and metric fields use percentage units. Contributions use percentage points. Dates are inclusive and default to calendar 2022. The default principal is USD 10,000.
+
+```sh
+curl -s http://localhost:8000/decision-lab/analyze -H 'Content-Type: application/json' \
+  -d '{"weights":{"SPY":60,"TLT":40},"asset":"TLT","shock_pct":-13,"loss_limit_pct":5}'
+```
+
+The response contains a −5.2% (−$520) instantaneous scenario and a −12.5% TLT threshold. A 12.5% decline reaches the limit exactly. A larger decline crosses it. Invalid inputs return 422. Missing adjusted prices or incompatible currencies return a valid scenario with a null replay and an explicit coverage error. Run `python -m pytest tests/test_decision_lab.py` after installing `requirements-dev.txt`. See the [calculation methodology](../ARCHITECTURE.md#breakpoint-ai).

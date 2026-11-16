@@ -1,5 +1,7 @@
 import { betterAuth } from "better-auth";
+import { z } from "zod";
 
+import { investorPersonas } from "../data/investor-personas";
 import { authPool } from "./db";
 
 const secret = process.env.BETTER_AUTH_SECRET;
@@ -16,6 +18,16 @@ export const auth = betterAuth({
   database: authPool,
   baseURL,
   secret,
+  user: {
+    additionalFields: {
+      investorPersona: {
+        type: "string",
+        fieldName: "investor_persona",
+        required: false,
+        validator: { input: z.enum(investorPersonas.map(({ id }) => id)) },
+      },
+    },
+  },
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,

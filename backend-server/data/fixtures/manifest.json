@@ -1,0 +1,87 @@
+{
+  "built_at": "2026-11-11T00:28:42.712087+00:00",
+  "market": {
+    "SPY": {
+      "rows": 501,
+      "content_hash": "7e53d86075ac71bf18a5a83ae75ff597b30c30f51cf109b094487b2fe73fbce9",
+      "observation_date": "2026-11-10"
+    },
+    "QQQ": {
+      "rows": 501,
+      "content_hash": "ab606d80eafc13a54078f7e116b73f031d886fcc490529b7ae01837db064c1b2",
+      "observation_date": "2026-11-10"
+    },
+    "AGG": {
+      "rows": 501,
+      "content_hash": "ea365d24ce1a59104e976266e8098c2f875a2426c23070e41ac7af7342e2b9b6",
+      "observation_date": "2026-11-10"
+    },
+    "GLD": {
+      "rows": 501,
+      "content_hash": "e2f8247573dc19bc9c287c8b829776f3504a2a3ff3ac84b10e1fe7af9c5e3009",
+      "observation_date": "2026-11-10"
+    },
+    "BIL": {
+      "rows": 501,
+      "content_hash": "cf4db31a081ed1d4348d9a05b65450e3a59aee6de43de33e0a3a052fc45bf82f",
+      "observation_date": "2026-11-10"
+    },
+    "NVDA": {
+      "rows": 501,
+      "content_hash": "2fbdc9318992612e57498357131f412540641f1a5380d6c26a3384aa60d50d1d",
+      "observation_date": "2026-11-10"
+    },
+    "AMD": {
+      "rows": 501,
+      "content_hash": "bfc72ac040a0bdfaecb8677b07911f2cca83b21db40f3fd7b8b4f906fece02b2",
+      "observation_date": "2026-11-10"
+    },
+    "INTC": {
+      "rows": 501,
+      "content_hash": "67b071c7093de061357400eff00af98cfbced4911a7ccfab7f617ebf5cab5afb",
+      "observation_date": "2026-11-10"
+    }
+  },
+  "ofac_sdn": {
+    "records": 19563,
+    "content_hash": "7f43332dae0d1b78ce44c31692d87a3c66e4075bcd97e36d3f18585572ff55b8"
+  },
+  "gac_consolidated": {
+    "records": 5781,
+    "content_hash": "6768368227404852f42514db78ade4fcbf0f9a9dea86a96eeaa42f24787b4052"
+  },
+  "federal_register_bis_semiconductor": {
+    "documents": 20,
+    "content_hash": "b597b91b17861a3ddc69e1c847d9845e9ff7da2c6a7f8f36190121e70013233f"
+  },
+  "macro": {
+    "DGS10": {
+      "rows": 16199,
+      "content_hash": "0a19145416475025a3db81f1d24cddde626211cc098ccba2c22c4baf426c5bb4"
+    },
+    "DGS3MO": {
+      "rows": 11297,
+      "content_hash": "52f832786520f9dbf3e994f9d8e35ebdd67094aadc5cf822167c9b833e3dc647"
+    }
+  },
+  "filings": {
+    "NVDA": {
+      "accession_number": "0001045810-26-000021",
+      "filing_date": "2026-02-25",
+      "chars": 200000,
+      "content_hash": "7dd1a4a422091eb32f2715b1427af54bc64df7b6869298bfae40c4ad5fec3349"
+    },
+    "AMD": {
+      "accession_number": "0000002488-26-000018",
+      "filing_date": "2026-02-04",
+      "chars": 200000,
+      "content_hash": "33f1050a8d40c284431382a6181782ff7353eb265f8d6749c3dd7cf405eb93e0"
+    },
+    "INTC": {
+      "accession_number": "0000050863-26-000011",
+      "filing_date": "2026-01-23",
+      "chars": 200000,
+      "content_hash": "7d2a1cac3e153db5104c95a46a8fa8fa81efba128f20f3bc170d49762960984e"
+    }
+  }
+}

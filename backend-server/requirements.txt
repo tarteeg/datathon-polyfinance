@@ -4,3 +4,19 @@ yfinance==1.8.0
 requests==2.34.2
 python-dotenv>=1,<2
 boto3==1.44.3
+exchange-calendars==4.13.3
+
+# riskripple trickle-down investigation agent
+pandas
+numpy
+scipy
+pydantic>=2
+networkx
+rapidfuzz
+strands-agents
+strands-agents-tools
+httpx
+beautifulsoup4
+lxml
+tiktoken
+psycopg2-binary

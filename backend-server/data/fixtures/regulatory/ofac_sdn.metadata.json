@@ -1,0 +1,11 @@
+{
+  "source_name": "OFAC Specially Designated Nationals (SDN) List",
+  "source_url": "https://wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com/Published/9d85db50-f549-40e7-9749-1a1260e624b9/2026-11-09/e9b8bcc6-880c-4138-a8ad-8a02f444f69e/SDN.CSV?X-Amz-Expires=3600&X-Amz-Security-Token=FwoDYXdzEIb%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FwEaDBae6TW%2BwYQcXL3jByLtBFOrbwVUjnUECmZ3NvW%2B3v7rEFc355EZ2GGvztcjjWTYoZ%2BlJ7X%2BpNF7iYWlS%2F4irjtzUx8rGu0EoZK7KXECRStRnA6ww8gdKwGbSq5AmmG4TpADxkihs7DZtUja%2Bk%2BfQm%2Bqw4pp0CiUUFfvArlRUu%2BhahmGC4Zk%2BXQ4uLka%2F8vnzQGxdcxohBeBsy37B59Ko41%2FxmFTtn%2FUQzM8A4d9aPjpGC4qVLBAvjT8dX9I3%2Bbd0YCIiZe%2BoX9O3x%2Bt%2BRnw%2FuOeyrcV%2BEcsWpyvWbV6iFggR7HEICrD2iniRrLZuJ8%2BRinyrORouiRw8eYv%2BAfdoT1FGho6XBFySXv5zF2hw38jMetQ26gd2YmEuoCSeFGmu3ltbspptGKR%2FGnJWJmhNr1IhpIdDTc5zcWS2BGOxdZoRCGK9VAm8PSFZ2aELGkYItT3fgTVxPm86VFTIYiL5823TjGA47BFjdSLPMBLf2nVqN4NlfU6unsNQKpkOdGnIXOzieN8eYSYJsrDvFWFd3z%2Fahs3fboNV17x2hkUkioLEukzYU7IdVDk0yng18eUyabJbzLTmwgjeYWXp2NrBWwPu9tUgmWbdkOohaWwEY5Avk4Nz1XgUNpI0FIJtZNS0FU4CL3p820OI8npTz%2FIIuklR4zMgJL4oko4IachVbudGp2rOPgzaXCfp25TMLk2uVmCiGFC59pAlgf%2BMjwUpl0eE4QfuggJO4BfYAUoCXPj5918xcK6g9u3skkXtTK%2BcyIZopNpsZsHtpBw8gwNFfknofFsoUg6ODBIGxd8P6TJWTmmDQ1ohxdJZmGXCSK5%2BuSPJrM1G2RHrKH67iiX287XBjJB5zYdff%2F9nlX6eFMQ87nEIPj4gH661ZTfdifOi9LBidrdHX6c32Rjg9MTSQBEsN3wAoGkZySJL%2FUgOfdX%2FWkFbCw%3D&response-content-disposition=attachment%3B%20filename%3D%22sdn.csv%22&response-content-type=text%2Fcsv&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIASARBLFPLOQVH2RDF%2F20261111%2Fus-gov-west-1%2Fs3%2Faws4_request&X-Amz-Date=20261111T002901Z&X-Amz-SignedHeaders=host&X-Amz-Signature=b88acbb08ff8f9e39f8ea7012a92451db47c65f5d29d42b8fbedc95deea3123a",
+  "retrieved_at": "2026-11-11T00:29:02.489048Z",
+  "observation_date": null,
+  "publication_date": null,
+  "currency": null,
+  "data_version": "7f43332dae0d1b78",
+  "content_hash": "7f43332dae0d1b78ce44c31692d87a3c66e4075bcd97e36d3f18585572ff55b8",
+  "license_or_restriction": "U.S. Treasury OFAC public sanctions data. Official source for U.S. sanctions screening; not a substitute for full legal compliance review."
+}
