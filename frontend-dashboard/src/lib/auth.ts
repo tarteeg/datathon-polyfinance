@@ -29,4 +29,8 @@ export const auth = betterAuth({
     enabled: true,
     storage: "database",
   },
+  user: {
+  additionalFields: {
+    },
+  },
 });
