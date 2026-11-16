@@ -34,19 +34,26 @@ export function RegisterForm() {
 
   async function onSubmit(data: z.infer<typeof formSchema>) {
     form.clearErrors("root");
+
     try {
       const { error } = await authClient.signUp.email({
         name: data.name,
         email: data.email,
         password: data.password,
       });
+
       if (error) {
-        form.setError("root", { message: error.message || "Authentication failed. Please try again." });
+        form.setError("root", {
+          message: error.message || "Authentication failed. Please try again.",
+        });
         return;
       }
-      window.location.assign("/dashboard/home");
+
+      window.location.assign("/onboarding/risk");
     } catch {
-      form.setError("root", { message: "Unable to connect. Please try again." });
+      form.setError("root", {
+        message: "Unable to connect. Please try again.",
+      });
     }
   }
 
